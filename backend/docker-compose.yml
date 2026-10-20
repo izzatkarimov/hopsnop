@@ -1,0 +1,22 @@
+# The project keeps the name it had when this file lived in its own
+# repository (hopsnop-backend). Docker Compose prefixes volumes with the
+# project name, which otherwise comes from the directory, so without this the
+# database volume would be looked for under a new name and appear empty.
+name: hopsnop-backend
+
+services:
+  postgres:
+    image: postgres:17
+    container_name: hopsnop-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: hopsnop
+      POSTGRES_USER: hopsnop
+      POSTGRES_PASSWORD: hopsnop
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:

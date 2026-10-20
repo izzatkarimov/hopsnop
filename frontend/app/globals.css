@@ -1,0 +1,70 @@
+@import "tailwindcss";
+
+/*
+ * Hopsnop foundation tokens.
+ * Intentionally small: surface, text, border and accent colours plus a couple
+ * of semantic colours for post interactions. Expand only when needed.
+ */
+:root {
+  --background: #ffffff;
+  --foreground: #16181d;
+  --muted: #5b6370;
+  --border: #e6e8eb;
+  --hover: #f2f4f6;
+  --accent: #0b7a55;
+  --accent-hover: #09694a;
+  --accent-foreground: #ffffff;
+  --like: #e11d48;
+  --danger: #dc2626;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0d0f12;
+    --foreground: #e8eaed;
+    --muted: #8b939e;
+    --border: #262a30;
+    --hover: #171a1f;
+    --accent: #3ccf91;
+    --accent-hover: #5ad9a3;
+    --accent-foreground: #04261a;
+    --like: #fb7185;
+    --danger: #f87171;
+  }
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-border: var(--border);
+  --color-hover: var(--hover);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-like: var(--like);
+  --color-danger: var(--danger);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+@theme {
+  /* Width of the central content column (max-w-feed). */
+  --container-feed: 600px;
+  /* Default size for post text and other feed content (text-body). */
+  --text-body: 0.9375rem;
+  --text-body--line-height: 1.4;
+}
+
+@layer base {
+  body {
+    background: var(--background);
+    color: var(--foreground);
+  }
+
+  /* One consistent keyboard focus indicator across the app. */
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+}
