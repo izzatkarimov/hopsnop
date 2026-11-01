@@ -92,6 +92,9 @@ def make_settings(monkeypatch: pytest.MonkeyPatch, **values: object) -> Settings
     if values.get("environment", "production") == "production":
         values.setdefault("frontend_url", "https://app.hopsnop.example")
         values.setdefault("rate_limit_secret", PRODUCTION_SECRET)
+        values.setdefault(
+            "two_factor_key", "cHJvZHVjdGlvbi10d28tZmFjdG9yLWtleS1vZi0zMmI"
+        )
         values.setdefault("resend_api_key", "re_test_0123456789abcdefghij")
         values.setdefault("email_from", "Hopsnop <no-reply@hopsnop.example>")
     return Settings(_env_file=None, **values)

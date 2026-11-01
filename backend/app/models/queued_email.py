@@ -21,6 +21,7 @@ class QueuedEmail(Base):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     # Keyed HMAC-SHA256s, no address is stored. Null once the account is deleted: the
     # email still counts toward the total, and the row no longer says whose it was.
+    # ``client_hash`` is also null on a security notice, which no client's cap counts.
     address_hash: Mapped[str | None] = mapped_column(String(64))
     client_hash: Mapped[str | None] = mapped_column(String(64))
     queued_at: Mapped[datetime] = mapped_column()

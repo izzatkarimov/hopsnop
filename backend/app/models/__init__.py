@@ -10,6 +10,7 @@ from app.models.rate_limit import RateLimit
 from app.models.repost import Repost
 from app.models.story import Story
 from app.models.story_view import StoryView
+from app.models.two_factor import LoginChallenge, RecoveryCode, TwoFactorCredential
 from app.models.user import User
 from app.models.user_session import UserSession
 
@@ -17,13 +18,16 @@ __all__ = [
     "EmailVerificationToken",
     "Follow",
     "Like",
+    "LoginChallenge",
     "PasswordResetToken",
     "Post",
     "QueuedEmail",
     "RateLimit",
+    "RecoveryCode",
     "Repost",
     "Story",
     "StoryView",
+    "TwoFactorCredential",
     "User",
     "UserSession",
 ]

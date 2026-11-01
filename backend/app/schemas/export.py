@@ -75,6 +75,13 @@ class ExportedLinkRequest(BaseModel):
     used_at: Timestamp | None
 
 
+class ExportedTwoFactor(BaseModel):
+    """Whether it's on and since when; never the secret or the recovery codes."""
+
+    enabled: bool
+    enabled_at: Timestamp | None
+
+
 class ExportedAccountRequests(BaseModel):
     email_verifications: list[ExportedLinkRequest]
     password_resets: list[ExportedLinkRequest]
@@ -125,6 +132,7 @@ class AccountExport(BaseModel):
     export_version: Literal[2]
     generated_at: Timestamp
     account: ExportedAccount
+    two_factor: ExportedTwoFactor
     sessions: list[ExportedSession]
     account_requests: ExportedAccountRequests
     posts: list[ExportedPost]

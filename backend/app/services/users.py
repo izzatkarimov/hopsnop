@@ -22,7 +22,7 @@ from app.core.media_urls import avatar_url
 from app.core.pagination import Cursor, Page, paginate
 from app.models import Follow, User
 from app.services import auth as auth_service
-from app.services import images
+from app.services import images, two_factor
 from app.services.auth import hold_account
 
 # The only columns the profile API may write; the picture changes only by upload.
@@ -70,6 +70,8 @@ class OwnProfile:
     user: User
     followers_count: int
     following_count: int
+    two_factor_enabled: bool
+    recovery_codes_left: int
 
 
 def get_public_profile(
@@ -104,7 +106,14 @@ def get_own_profile(db: Session, user: User) -> OwnProfile:
     followers_count, following_count = db.execute(
         select(*_follow_counts(user.id))
     ).one()
-    return OwnProfile(user, followers_count, following_count)
+    two_factor_enabled, recovery_codes_left = two_factor.status(db, user.id)
+    return OwnProfile(
+        user,
+        followers_count,
+        following_count,
+        two_factor_enabled,
+        recovery_codes_left,
+    )
 
 
 def update_profile(

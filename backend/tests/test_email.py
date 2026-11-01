@@ -307,3 +307,74 @@ def test_production_without_resend_does_not_drop_email_quietly() -> None:
     assert not settings.is_development
     with pytest.raises(RuntimeError, match="RESEND_API_KEY and EMAIL_FROM"):
         get_email_sender()
+
+
+SECURITY_NOTICES = {
+    "send_two_factor_enabled": (
+        "Two-factor login is on for your Hopsnop account",
+        "turned on",
+        "two-factor on",
+    ),
+    "send_two_factor_disabled": (
+        "Two-factor login is off for your Hopsnop account",
+        "turned off",
+        "two-factor off",
+    ),
+    "send_recovery_code_used": (
+        "A recovery code was used on your Hopsnop account",
+        "recovery code",
+        "recovery code",
+    ),
+    "send_two_factor_failures": (
+        "Wrong two-factor codes on your Hopsnop account",
+        "code was wrong",
+        "two-factor failures",
+    ),
+}
+
+
+@pytest.mark.parametrize("send", SECURITY_NOTICES)
+def test_a_security_notice_says_what_happened_and_links_only_to_changing_the_password(
+    send: str,
+) -> None:
+    resend = Resend()
+    subject, says, _ = SECURITY_NOTICES[send]
+
+    getattr(resend.sender(), send)(to=ADDRESS)
+
+    body = resend.body()
+    assert body["to"] == [ADDRESS]
+    assert body["subject"] == subject
+    assert says in body["text"]
+    assert "someone has your password" in body["text"]
+    assert urls_in(body["html"]) == {forgot_password_url()}
+    for loads_something in LOADS_SOMETHING:
+        assert loads_something not in body["html"].lower()
+
+
+@pytest.mark.parametrize("send", SECURITY_NOTICES)
+def test_a_failed_security_notice_is_logged_like_the_others(
+    caplog: pytest.LogCaptureFixture, send: str
+) -> None:
+    caplog.set_level(logging.DEBUG)
+    resend = Resend(refused)
+
+    getattr(resend.sender(), send)(to=ADDRESS)
+
+    [record] = [r for r in caplog.records if r.name == "app.services.email"]
+    assert record.levelno == logging.WARNING
+    assert record.getMessage() == (
+        f"A {SECURITY_NOTICES[send][2]} email was not sent: Resend answered 422."
+    )
+    assert ADDRESS not in caplog.text and API_KEY not in caplog.text
+
+
+@pytest.mark.parametrize("send", SECURITY_NOTICES)
+def test_the_development_sender_writes_a_security_notice_to_the_log(
+    caplog: pytest.LogCaptureFixture, send: str
+) -> None:
+    caplog.set_level(logging.WARNING)
+
+    getattr(ConsoleEmailSender(), send)(to=ADDRESS)
+
+    assert "[development]" in caplog.text and ADDRESS in caplog.text

@@ -32,10 +32,11 @@ def _client_hash(client: str) -> str:
     return key_hash("queued-email:client", client)
 
 
-def take_place(db: Session, *, email: str, client: str) -> bool:
-    """False if a cap is reached. Caller must commit either way: that frees the lock."""
+def take_place(db: Session, *, email: str, client: str | None) -> bool:
+    """False if a cap is reached; no ``client``, no cap per client. Caller must commit."""
     db.execute(select(func.pg_advisory_xact_lock(EMAIL_LOCK_KEY)))
-    address_hash, client_hash = _address_hash(email), _client_hash(client)
+    address_hash = _address_hash(email)
+    client_hash = _client_hash(client) if client is not None else None
     now = _now()
     # Own statement, begun after the lock: it sees what the last holder committed.
     total, for_address_from_client = db.execute(
@@ -50,7 +51,10 @@ def take_place(db: Session, *, email: str, client: str) -> bool:
     if total >= settings.emails_per_day:
         logger.info("An email was not sent: EMAILS_PER_DAY is reached.")
         return False
-    if for_address_from_client >= settings.emails_per_address_and_ip_per_day:
+    if (
+        client_hash is not None
+        and for_address_from_client >= settings.emails_per_address_and_ip_per_day
+    ):
         logger.warning(
             "An email was not sent: EMAILS_PER_ADDRESS_AND_IP_PER_DAY is reached."
         )

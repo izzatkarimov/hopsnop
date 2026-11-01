@@ -20,6 +20,7 @@ from app.models import (
     Repost,
     Story,
     StoryView,
+    TwoFactorCredential,
     User,
     UserSession,
 )
@@ -36,6 +37,7 @@ from app.schemas.export import (
     ExportedSession,
     ExportedStory,
     ExportedStoryView,
+    ExportedTwoFactor,
     story_media_file,
 )
 from app.services import auth as auth_service
@@ -61,6 +63,7 @@ def export_account(db: Session, current: UserSession, *, password: str) -> Expor
         export_version=EXPORT_VERSION,
         generated_at=_now(),
         account=_account(account, store, pictures),
+        two_factor=_two_factor(db, account.id),
         sessions=_sessions(db, account.id, current.id),
         account_requests=ExportedAccountRequests(
             email_verifications=_link_requests(
@@ -138,6 +141,16 @@ def _account(
         created_at=account.created_at,
         updated_at=account.updated_at,
     )
+
+
+def _two_factor(db: Session, user_id: uuid.UUID) -> ExportedTwoFactor:
+    """Selects the one column: the secret never leaves the database here."""
+    enabled_at = db.scalar(
+        select(TwoFactorCredential.enabled_at).where(
+            TwoFactorCredential.user_id == user_id
+        )
+    )
+    return ExportedTwoFactor(enabled=enabled_at is not None, enabled_at=enabled_at)
 
 
 def _sessions(

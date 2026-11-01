@@ -17,7 +17,8 @@ uvicorn app.main:app --reload
 The schema is defined by the SQLAlchemy models in `app/models/` and managed
 with Alembic. It currently consists of `users`, `posts`, `likes`, `reposts`,
 `follows`, `stories`, `story_views`, `sessions`, `email_verification_tokens`,
-`password_reset_tokens`, `rate_limits` and `queued_emails`.
+`password_reset_tokens`, `rate_limits`, `queued_emails`,
+`two_factor_credentials`, `recovery_codes` and `login_challenges`.
 
 ```bash
 alembic upgrade head                              # apply migrations
@@ -86,6 +87,7 @@ defined.
 | `ENVIRONMENT` | `production` | `development` or `production`, see below |
 | `FRONTEND_URL` | development only: `http://localhost:3000` | Base of emailed links; the only other origin allowed to call the API from a browser |
 | `RATE_LIMIT_SECRET` | development only | Key of the hashes that rate-limit counters are stored under |
+| `TWO_FACTOR_KEY` | development only | 32 random bytes in base64url. Encrypts [two-factor](#two-factor-login) secrets and keys recovery-code hashes. A secret; back it up with the database |
 | `RESEND_API_KEY` | required in production | Key of the [Resend](#email) API, through which account email is sent. A secret, like `RATE_LIMIT_SECRET` |
 | `EMAIL_FROM` | required in production | Sender of account email, e.g. `Hopsnop <no-reply@hopsnop.com>`, at a domain verified with Resend |
 | `EMAILS_PER_DAY` | `80` | Emails across the whole site in any 24 hours, see [rate limiting](#rate-limiting). Keep it under what the email plan allows; a paid plan just raises it |
@@ -126,6 +128,8 @@ checked once, when the application is loaded, and it fails there if
   with credentialed requests, so there is no fallback to `localhost`;
 - `RATE_LIMIT_SECRET` is not set, is shorter than 32 characters, or is the
   development value;
+- `TWO_FACTOR_KEY` is not set, is not 32 bytes in base64url, or is the
+  development value;
 - `RESEND_API_KEY` or `EMAIL_FROM` is not set. Without them no verification or
   reset link could be delivered, so a production never runs that drops them.
 
@@ -147,7 +151,12 @@ nothing for frontend JavaScript to store.
 | `POST /auth/register` | Create an unverified account and send a verification link; if the email address is taken, create nothing and email its owner, with the same answer |
 | `POST /auth/verify-email` | Redeem a verification token |
 | `POST /auth/resend-verification` | Send a new verification link |
-| `POST /auth/login` | Check credentials, start a session, set the cookie |
+| `POST /auth/login` | Check credentials, start a session, set the cookie; with [two-factor login](#two-factor-login) on, answer `202` with a challenge instead |
+| `POST /auth/login/two-factor` | Take the challenge and a code, start the session, set the cookie |
+| `POST /auth/two-factor/start` | Create a pending secret |
+| `POST /auth/two-factor/confirm` | Turn it on with a code; returns recovery codes |
+| `POST /auth/two-factor/recovery-codes` | Replace the recovery codes |
+| `POST /auth/two-factor/disable` | Turn it off |
 | `POST /auth/logout` | Revoke the current session, clear the cookie |
 | `GET /auth/me` | The authenticated user |
 | `POST /auth/forgot-password` | Send a password reset link |
@@ -182,7 +191,9 @@ failures are limited per account like failed logins. On success:
 - the current session continues, but under a new token, sent in a new cookie.
   A copy of the old cookie is therefore worth nothing either. The session
   keeps its id and its expiry;
-- a password reset link that is still outstanding is withdrawn.
+- a password reset link that is still outstanding is withdrawn;
+- an open [login challenge](#two-factor-login) is withdrawn, and the account's
+  count of wrong codes is cleared.
 
 A login, a password change and a password reset for one account pass through
 a lock on the account's row, one at a time. A login checks the password
@@ -222,6 +233,79 @@ deletes the user's previous unused one, so only the latest link works and
 `EMAIL_TOKEN_COOLDOWN_SECONDS` of the last (see
 [rate limiting](#rate-limiting)).
 
+### Two-factor login
+
+An authenticator app as a second step at login: TOTP per RFC 6238, with SHA-1,
+6 digits and 30-second steps, accepting the previous and next step for clock
+drift. It is optional and off by default.
+
+**Turning it on** takes two requests, each with the current password:
+`POST /auth/two-factor/start` makes a secret and returns it in base32 and as an
+`otpauth://` URI, and `POST /auth/two-factor/confirm` takes a code from it, turns
+it on and returns 10 recovery codes, this once. A pending secret lasts an hour,
+and starting again replaces it.
+
+**Login.** With a right password and two-factor login on, `POST /auth/login`
+answers `202 {challenge, expires_at}`, with no session and no cookie. A wrong
+password gets the same `401` as ever, so nothing shows before the password is
+proven. `POST /auth/login/two-factor` takes the challenge and a code, and only
+then starts the session and sets the cookie.
+
+| Second step | Answer |
+| --- | --- |
+| Wrong code, a code already used, a wrong recovery code | `400 Invalid code.` |
+| Expired, used, voided or unknown challenge | `400 Invalid or expired login challenge.` |
+| Over a limit | `429` |
+
+Only someone holding a live challenge, who has proven the password, can tell the
+two apart.
+
+**Storage.**
+
+| What | How |
+| --- | --- |
+| The secret (`two_factor_credentials`) | AES-256-GCM under a key derived from `TWO_FACTOR_KEY`, as it has to be read to check a code. The account's id is authenticated with it, so a value copied to another row does not open |
+| Recovery codes (`recovery_codes`) | 16 characters of base32, 80 random bits, as `XXXX-XXXX-XXXX-XXXX`. Stored as HMAC-SHA256 under another derived key, with the account's id. A fast hash is enough, as 80 random bits cannot be guessed; a used code's row is removed |
+| Challenges (`login_challenges`) | 256 random bits, stored as SHA-256. One open per account; a new login replaces it. It expires after `LOGIN_CHALLENGE_LIFETIME_MINUTES` (5), and is void after `LOGIN_CHALLENGE_ATTEMPTS` (3) wrong codes |
+| The last step used (`last_used_step`) | A code at or before it is refused, so a code works once. The code that confirmed counts too |
+
+Losing `TWO_FACTOR_KEY` loses every secret and recovery code; there is no key
+rotation.
+
+**Recovery codes** each work once in place of a code at login and to turn it off.
+`POST /auth/two-factor/recovery-codes` (password and a code from the app) replaces
+all of them. `POST /auth/two-factor/disable` (password and a code from the app or a
+recovery code) removes the secret, the recovery codes and any open challenge.
+
+**Sessions.** Turning it on or off and replacing the codes end the account's other
+sessions and keep the current one, under the same token.
+
+**A password reset never turns it off**: login still asks for a code afterwards,
+and losing the phone is what recovery codes are for. A reset ends every session,
+as it always has, and it and a password change withdraw an open challenge, which
+was won with the old password, and clear the count of wrong codes, so that the
+owner does not wait out a window filled by whoever had the old password.
+
+**Guessing a code.** Three codes in a million are valid at a time, and an account
+gets `TWO_FACTOR_FAILURES_PER_ACCOUNT` (5) wrong codes per window, shared by every
+check, from any number of addresses: 480 a day, or 0.14% a day, 4.2% in 30 days and
+41% in a year of trying without a stop. It takes the right password to try at all,
+a new Argon2 login every 3 wrong codes, and the owner is emailed when the count
+fills. One address gets `TWO_FACTOR_FAILURES_PER_IP` (30) across accounts: 2,880 a
+day, or 0.86% a day of hitting any one of them. A full count refuses a right code
+too, so someone with the password can keep the owner out until the password is
+changed.
+
+**What stays open.**
+
+- Other password-confirmed actions do not ask for a code: a stolen session and the
+  password can still change the password, export the data or delete the account.
+- A code can be phished and relayed within its step. TOTP does not stop that.
+- The key is in the application's environment, so encryption protects against a
+  copy of the database, not against someone on the server.
+- The web frontend does not take the second step yet, so an account with this on
+  can log in only through the API.
+
 ### Deleting an account
 
 `POST /auth/delete-account` removes the signed-in user's account, at once and
@@ -253,7 +337,8 @@ all of it or none of it:
 | Follows, in both directions | Removed |
 | Stories, expired ones included, and who viewed them | Removed |
 | Views the account made of others' stories | Removed |
-| Rate-limit counters under its username, its email and its id (wrong passwords, exports, uploads, registration notices) | Removed |
+| Rate-limit counters under its username, its email and its id (wrong passwords, exports, uploads, registration notices, wrong two-factor codes) | Removed |
+| Its two-factor secret, recovery codes and open login challenge | Removed |
 | Records of the [emails queued](#rate-limiting) to its address | Both keyed hashes blanked. A time with nothing attached stays for up to 24 hours, because that email still counts toward the day's total |
 
 What is left is the tombstones, and only where somebody else's reply needs
@@ -392,6 +477,9 @@ unverified account, which `GET /users/{username}` does not show (`404`).
 Closing both would take an account that does not exist until its address is
 verified, which is not how registration works here.
 
+With [two-factor login](#two-factor-login) on, a right password gets a `202` in
+place of the `200`; a wrong one gets the same `401` as ever.
+
 The [daily total of emails](#rate-limiting) is shared, which tells a little too:
 someone who fills it to the last place and watches their own mailbox can tell
 whether a request for another address took that place. That is slower and
@@ -467,7 +555,10 @@ below). The header is exposed to the frontend
 | `POST /auth/login` | failures | identifier and address | `LOGIN_FAILURES_PER_IDENTIFIER_AND_IP` | 5 |
 | | failures | identifier | `LOGIN_FAILURES_PER_IDENTIFIER` | 20 |
 | | failures | address | `LOGIN_FAILURES_PER_IP` | 30 |
-| `POST /auth/change-password`, `/auth/delete-account`, `/users/me/export` | failures | account | `PASSWORD_CONFIRMATION_FAILURES` | 5 together |
+| `POST /auth/change-password`, `/auth/delete-account`, `/users/me/export`, `/auth/two-factor/start`, `/confirm`, `/recovery-codes`, `/disable` | failures | account | `PASSWORD_CONFIRMATION_FAILURES` | 5 together |
+| `POST /auth/login/two-factor`, `/auth/two-factor/confirm`, `/recovery-codes`, `/disable` | wrong codes | account | `TWO_FACTOR_FAILURES_PER_ACCOUNT` | 5 together |
+| | wrong codes | address | `TWO_FACTOR_FAILURES_PER_IP` | 30 together |
+| | notices when that account's count fills, silently | account | `TWO_FACTOR_FAILURE_NOTICES_PER_ACCOUNT` | 1 |
 | `POST /users/me/export` | exports | account | `DATA_EXPORTS_PER_ACCOUNT` | 3 |
 | `POST /auth/register` | requests | address | `REGISTRATIONS_PER_IP` | 5 |
 | | notices to a taken address, silently | account | `REGISTRATION_NOTICES_PER_ACCOUNT` | 1 |
@@ -553,6 +644,11 @@ got. A new account is still created, without a link, and can ask for one once
 places free up. A request inside the cooldown, or for an address with nothing to
 send, takes no place.
 
+The four [two-factor notices](#email) are under the total only, and leave the
+per-client allowance untouched. Otherwise someone with the password could use up
+that allowance from their own address and then turn two-factor login off unseen.
+A full total still holds them back, so whoever fills it can hide them.
+
 What the caps leave open:
 
 - Several clients can each send their allowance to one address, up to the total.
@@ -637,8 +733,8 @@ different scripts are not detected, and display names are not unique.
 
 ### Email
 
-Account email, the verification link, the password reset link and the
-registration notice, is sent
+Account email, the verification link, the password reset link, the
+registration notice and the two-factor notices, is sent
 through [Resend](https://resend.com) by `ResendEmailSender` in
 `app/services/email.py`: one `POST https://api.resend.com/emails` per email,
 with the key in an `Authorization: Bearer` header and a JSON body of `from`
@@ -649,6 +745,9 @@ timeout of 10 seconds; there is no Resend SDK.
 | --- | --- | --- |
 | Verification | Verify your Hopsnop email address | The link, and that it expires in `EMAIL_VERIFICATION_TOKEN_LIFETIME_HOURS` hours |
 | Password reset | Reset your Hopsnop password | The link, that it expires in `PASSWORD_RESET_TOKEN_LIFETIME_MINUTES` minutes, and that the email can be ignored by someone who did not ask for it |
+| Two-factor on, off | Two-factor login is on (off) for your Hopsnop account | That it was turned on or off, and a link to change the password if that was not the owner |
+| Recovery code used | A recovery code was used on your Hopsnop account | That one was used and cannot be used again, and the same link |
+| Two-factor failures | Wrong two-factor codes on your Hopsnop account | That the password was right and the code wrong several times, and the same link. Sent when the account's count of wrong codes fills |
 | Registration notice | Someone tried to register with your Hopsnop email address | That someone tried, and that nothing was created or changed; links to log in and to reset the password; that logging in shows how to verify an address that never was; and that it can be ignored by someone who did not try. No token, and nothing from the request, so that registering cannot deliver somebody's words to any inbox |
 
 The HTML version is the same text, escaped, with each link as a link: no
@@ -670,8 +769,8 @@ pass through a third party before it reaches Hopsnop. Both are settings of the
 domain at Resend, not of the request, so the application cannot ensure this
 itself; whoever operates the deployment has to.
 
-**Sent after the response.** The three routes that send email (`register`,
-`resend-verification` and `forgot-password`) first take a place under the [daily
+**Sent after the response.** The routes that send email (`register`,
+`resend-verification`, `forgot-password` and those of two-factor login) first take a place under the [daily
 caps](#rate-limiting), whatever the sender is, then hand the email to FastAPI's
 background tasks, which run once the response has been sent, so the time the
 provider takes does not show in the response ([Account
@@ -725,8 +824,8 @@ fields in full.
   never read on this path. `following` says whether the caller follows the user
   (see [Follows](#follows)); it is the one field that depends on who is asking,
   so the response is sent with `Cache-Control: no-store`.
-- **Own** (`GET /users/me`): the public fields except `following`, plus `email`
-  and `email_verified_at`.
+- **Own** (`GET /users/me`): the public fields except `following`, plus `email`,
+  `email_verified_at`, `two_factor_enabled` and `recovery_codes_left`.
 
 `password_hash`, `is_active` and `updated_at` are in neither.
 
@@ -1537,6 +1636,7 @@ same archive, byte for byte, apart from `generated_at`.
     "created_at": "2026-03-01T07:55:10.482113Z",
     "updated_at": "2026-03-01T08:00:00.000000Z"
   },
+  "two_factor": {"enabled": true, "enabled_at": "2026-03-02T09:00:00.000000Z"},
   "sessions": [
     {"created_at": "...", "last_used_at": "...", "expires_at": "...",
      "revoked_at": null, "is_current": true}
@@ -1608,12 +1708,15 @@ which fails for a column that is added and not yet decided on.
 | `follows` | the other account's username, `created_at` | the ids of other accounts |
 | `stories` | everything else; `media_id` as the picture itself, in the archive | `author_id`: the account itself |
 | `story_views` | `story_id` and `viewed_at` of views the account made; the number of views of each of its stories | who viewed its stories: that is the viewers' data, and is told to nobody |
+| `two_factor_credentials` | `enabled_at`, and whether it is on, as `two_factor` | `secret_ciphertext`: a credential. `pending_until`, `created_at`, `last_used_step`: internal. `user_id`: the account itself |
+| `recovery_codes`, `login_challenges` | nothing | credentials, and a login under way |
 | `rate_limits` | nothing | counters under keyed hashes, attributable to no account without the server's secret; a control, not a record of the user |
 | `queued_emails` | nothing | kept for 24 hours under keyed hashes, attributable to no account without the server's secret; a control, not a record of the user |
 
 **Never in an export:** the password or its hash, session tokens or their
 hashes, session ids, the hashes or ids of emailed links, the keys of
-rate-limit counters, the hashes of queued emails, `RATE_LIMIT_SECRET`, or any
+rate-limit counters, the hashes of queued emails, the two-factor secret, recovery
+codes and their hashes, login challenges, `RATE_LIMIT_SECRET`, or any
 other secret. None of these
 is read by any statement of the export, and none has a field in the schema.
 The tests search the whole document for every such value in the database,
@@ -1705,7 +1808,8 @@ writing the document out in pieces. No index was added.
 
 Much of what is stored stops being used without being removed: a story
 expires, a session ends, a link is opened or runs out, a rate-limit window is
-over, a queued email stops counting, somebody registers and never opens the link, a picture file is left
+over, a queued email stops counting, a login challenge or an unconfirmed
+two-factor secret runs out, somebody registers and never opens the link, a picture file is left
 behind by an upload that failed. The retention purge removes such rows and
 files once they have been of no use for a configured time. It is
 a command, run by hand or by cron. The application never runs it, and there
@@ -1769,8 +1873,10 @@ Removed:
   password reset tokens                6
   rate limit counters               1204
   queued emails                       63
+  login challenges                     4
+  pending two factor secrets           1
   orphaned pictures                    2
-  total                             1781
+  total                             1786
 ```
 
 A dry run prints `Would remove:` in place of `Removed:`, with the rows that
@@ -1829,7 +1935,7 @@ What has to be the same, and what happens if it is not:
 | --- | --- | --- |
 | `DATABASE_URL` | Which database is purged | Required: without it the command does not start. Pointing at another database or server is caught by `--database` and `--host` |
 | `IMAGE_STORAGE_PATH` | Where the picture files are; orphaned ones are removed from it | Caught by `--images`, which must name the same folder. A relative path is taken from the directory the command starts in, so start it where the application starts |
-| `ENVIRONMENT`, and in production `FRONTEND_URL`, `RATE_LIMIT_SECRET`, `RESEND_API_KEY` and `EMAIL_FROM` | Not used by the purge, but the settings are checked as a whole | The default is `production`, which does not start without the other four. A cron that was given no environment at all therefore fails, with status `1` and an error in its log, and removes nothing. It does not run on defaults |
+| `ENVIRONMENT`, and in production `FRONTEND_URL`, `RATE_LIMIT_SECRET`, `TWO_FACTOR_KEY`, `RESEND_API_KEY` and `EMAIL_FROM` | Not used by the purge, but the settings are checked as a whole | The default is `production`, which does not start without the other five. A cron that was given no environment at all therefore fails, with status `1` and an error in its log, and removes nothing. It does not run on defaults |
 | `RATE_LIMIT_WINDOW_MINUTES` | When a counter's window is over | **Must match.** There is no way for the command to know the application's value. With a shorter one, counters are removed while they still count, once the purge's window plus `RATE_LIMIT_RETENTION_HOURS` is less than the application's window: failed logins are then forgotten early. The default retention of an hour covers a difference of up to an hour |
 | The retention periods and `PURGE_BATCH_SIZE` | Read by the purge only | Nothing has to match: the application does not use them. If cron lacks them the defaults below apply, which keep rows for longer than zero and remove no account |
 | `PURGE_UNVERIFIED_ACCOUNTS` | Read by the purge only | Off unless set. Lacking it can only mean that fewer rows are removed |
@@ -1851,6 +1957,8 @@ A row is removed when that moment is the period ago or longer.
 | Sessions | `expires_at` or `revoked_at`, whichever is earlier | days | `ENDED_SESSION_RETENTION_DAYS` | `30` |
 | Verification and reset tokens | `expires_at` or `used_at`, whichever is earlier | days | `SPENT_TOKEN_RETENTION_DAYS` | `7` |
 | Rate-limit counters | the end of their window, `window_start` + `RATE_LIMIT_WINDOW_MINUTES` | hours | `RATE_LIMIT_RETENTION_HOURS` | `1` |
+| Login challenges | `expires_at` | not at all | none | |
+| Two-factor secrets never confirmed | `pending_until`, an hour after the start | not at all | none | |
 | Records of queued emails, blanked or not | when they stop counting, `queued_at` + 24 hours | not at all | none: fixed, so cron has nothing to match | |
 | Accounts that were never verified, **only if `PURGE_UNVERIFIED_ACCOUNTS` is `true`** | `created_at`, see below | days | `UNVERIFIED_ACCOUNT_RETENTION_DAYS` | `7`, and off |
 | Picture files that no row names | when the file was last written | hours | `ORPHANED_IMAGE_RETENTION_HOURS` | `1` (at least `1`) |
@@ -1900,7 +2008,7 @@ removed once it is `UNVERIFIED_ACCOUNT_RETENTION_DAYS` old, the ones made in
 good faith included, and an account that an operator meant to verify by hand
 would be gone before they got to it. Switch it on only where verification
 emails are delivered, and after a dry run has shown how many accounts it
-would take. Setting the period alone does not switch it on. The other five
+would take. Setting the period alone does not switch it on. The other seven
 kinds of rows are removed either way.
 
 Such an account cannot be signed in to, so nothing was ever written in its
@@ -2069,7 +2177,7 @@ to backups and logs.
 | [Data export](#data-export): everything of an account's own, complete, machine-readable, on request and behind the password | Right of access (Art. 15), right to data portability (Art. 20) |
 | [Post deletion](#deletion) and [account deletion](#deleting-an-account): real removal, at once, with nothing kept to restore from; what stays of a thread holds no author and no text | Right to erasure (Art. 17) |
 | [Pictures](#pictures) are redrawn from their pixels alone: the location, camera and time a phone writes into a photo are never stored. They are served by the API itself and never fetched from another host, so no third party sees who views them | Data minimisation (Art. 5(1)(c)), data protection by design (Art. 25) |
-| No address and no user agent is stored; tokens only as hashes; rate-limit keys and the records of queued emails only as keyed hashes; an export leaves out what is not the user's | Data minimisation (Art. 5(1)(c)) |
+| No address and no user agent is stored; tokens, recovery codes and login challenges only as hashes; two-factor secrets only encrypted; rate-limit keys and the records of queued emails only as keyed hashes; an export leaves out what is not the user's | Data minimisation (Art. 5(1)(c)) |
 | Password hashing, session handling, rate limiting, and the password asked again before data is handed out or removed | Security of processing (Art. 32) |
 | [Retention purge](#retention): expired stories, ended sessions, spent links, finished rate-limit windows and unreferenced picture files are removed after a configured time, records of queued emails after 24 hours, and accounts that were never verified where that is switched on | Storage limitation (Art. 5(1)(e)) |
 
@@ -2119,7 +2227,7 @@ again, and a run that left rows behind is failed.
 Each test runs in a transaction that is rolled back, so nothing is committed.
 The exception is the tests of what happens when requests arrive together
 (the last part of `test_rate_limiting.py` and of `test_email_caps.py`,
-`test_auth_concurrency.py`,
+`test_auth_concurrency.py`, `test_two_factor_concurrency.py`,
 `test_post_erasure_concurrency.py`, `test_account_deletion_concurrency.py`,
 `test_data_export_concurrency.py`, `test_retention_concurrency.py`, and some
 of `test_lifecycle_foundations.py`). They need real transactions:

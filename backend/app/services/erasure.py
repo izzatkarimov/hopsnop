@@ -12,7 +12,7 @@ from sqlalchemy.orm import InstrumentedAttribute, Session, aliased
 from app.models import Like, Post, Repost, Story, User
 
 # Lock order: the acting account's row, this lock, the request's posts or stories, the
-# email lock (``email_caps``), tokens, sessions. Nothing takes two in reverse: no deadlock.
+# email lock (``email_caps``), tokens and two-factor rows, sessions. None in reverse.
 ERASURE_LOCK_KEY = 0x686F70736E6F70
 
 

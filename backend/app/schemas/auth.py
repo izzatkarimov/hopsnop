@@ -181,6 +181,44 @@ class DeleteAccountRequest(BaseModel):
     password: Annotated[SecretStr, Field(min_length=1, max_length=PASSWORD_MAX_LENGTH)]
 
 
+# Six digits or a recovery code; which of them is decided where it is checked.
+TwoFactorCode = Annotated[SecretStr, Field(min_length=1, max_length=32)]
+
+
+class TwoFactorPasswordRequest(BaseModel):
+    # Checked against the account, not the policy for choosing one.
+    password: Annotated[SecretStr, Field(min_length=1, max_length=PASSWORD_MAX_LENGTH)]
+
+
+class TwoFactorCodeRequest(BaseModel):
+    # Checked against the account, not the policy for choosing one.
+    password: Annotated[SecretStr, Field(min_length=1, max_length=PASSWORD_MAX_LENGTH)]
+    code: TwoFactorCode
+
+
+class TwoFactorLoginRequest(BaseModel):
+    challenge: Token
+    code: TwoFactorCode
+
+
+class LoginChallengeResponse(BaseModel):
+    """The password was right; a code is needed, and no session exists yet."""
+
+    challenge: str
+    expires_at: datetime
+
+
+class TwoFactorStartResponse(BaseModel):
+    secret: str
+    otpauth_uri: str
+
+
+class RecoveryCodesResponse(BaseModel):
+    """Shown this once; only hashes are kept."""
+
+    recovery_codes: list[str]
+
+
 class AccountResponse(BaseModel):
     """Has private fields such as the email address: only for the account's owner."""
 

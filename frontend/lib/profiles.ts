@@ -22,6 +22,8 @@ export type PublicProfileResponse = ProfileFields & {
 export type MyProfileResponse = ProfileFields & {
   email: string;
   email_verified_at: string | null;
+  two_factor_enabled: boolean;
+  recovery_codes_left: number;
 };
 
 /** null clears bio; display_name can't be cleared; the picture is uploaded apart. */

@@ -56,6 +56,8 @@ def _my_profile_response(profile: OwnProfile) -> MyProfileResponse:
         bio=user.bio,
         avatar_url=user.avatar_url,
         email_verified_at=user.email_verified_at,
+        two_factor_enabled=profile.two_factor_enabled,
+        recovery_codes_left=profile.recovery_codes_left,
         followers_count=profile.followers_count,
         following_count=profile.following_count,
         created_at=user.created_at,

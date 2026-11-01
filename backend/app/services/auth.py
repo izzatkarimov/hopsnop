@@ -9,6 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, contains_eager
 from sqlalchemy.orm.exc import ObjectDeletedError
 
+from app.core import two_factor as two_factor_codes
 from app.core.config import settings
 from app.core.image_store import image_store
 from app.core.security import (
@@ -20,7 +21,7 @@ from app.core.security import (
     verify_password,
 )
 from app.models import EmailVerificationToken, PasswordResetToken, User, UserSession
-from app.services import email_caps, erasure
+from app.services import email_caps, erasure, two_factor
 
 
 class AuthError(Exception):
@@ -54,6 +55,30 @@ class InvalidPasswordResetTokenError(AuthError):
 class WrongCurrentPasswordError(AuthError):
     # Not a 401: the session is fine, and a client mustn't take this as a logout.
     detail = "Current password is incorrect."
+
+
+class InvalidCodeError(AuthError):
+    # Not a 401: a session or a live challenge is still fine.
+    detail = "Invalid code."
+
+
+class InvalidLoginChallengeError(AuthError):
+    """One answer for expired, used, voided and unknown."""
+
+    detail = "Invalid or expired login challenge."
+
+
+class TwoFactorAlreadyOnError(AuthError):
+    status_code = 409
+    detail = "Two-factor login is already on."
+
+
+class TwoFactorOffError(AuthError):
+    detail = "Two-factor login is off."
+
+
+class NoPendingTwoFactorError(AuthError):
+    detail = "No two-factor setup is pending."
 
 
 class AccountNoLongerExistsError(AuthError):
@@ -144,11 +169,16 @@ def _place_taken(db: Session, email: str, client: str) -> bool:
     return False
 
 
-def take_place_for_notice(db: Session, *, email: str, client: str) -> bool:
+def take_place_for_notice(db: Session, *, email: str, client: str | None) -> bool:
     """Commits either way, which gives the caps' lock back."""
     taken = email_caps.take_place(db, email=email, client=client)
     db.commit()
     return taken
+
+
+def take_place_for_security_notice(db: Session, *, email: str) -> bool:
+    """Under the total only: else filling one client's cap would hide the notice."""
+    return take_place_for_notice(db, email=email, client=None)
 
 
 def _username_is_taken(db: Session, username: str) -> bool:
@@ -163,13 +193,19 @@ def _address_holder(db: Session, email: str) -> AddressHolder | None:
     return AddressHolder(row.id, row.is_active) if row is not None else None
 
 
+@dataclass(frozen=True)
+class LoginChallengeIssued:
+    raw_challenge: str
+    expires_at: datetime
+
+
 def log_in(
     db: Session,
     *,
     identifier: str,
     password: str,
     replaced_token: str | None = None,
-) -> tuple[UserSession, str]:
+) -> tuple[UserSession, str] | LoginChallengeIssued:
     """``replaced_token`` is the browser's session, ended as its cookie is replaced."""
     column = User.email if "@" in identifier else User.username
     user = db.scalar(select(User).where(column == identifier))
@@ -197,6 +233,18 @@ def log_in(
     if password_needs_rehash(user.password_hash):
         # The one moment the plaintext is available to upgrade the hash.
         user.password_hash = hash_password(password)
+    # Under the lock: a login past its password check can't outrun turning this on.
+    if two_factor.is_on(two_factor.credential_of(db, user.id)):
+        raw_challenge, expires_at = two_factor.issue_challenge(db, user.id, now)
+        db.commit()
+        return LoginChallengeIssued(raw_challenge, expires_at)
+    return _start_session(db, user, replaced_token, now)
+
+
+def _start_session(
+    db: Session, user: User, replaced_token: str | None, now: datetime
+) -> tuple[UserSession, str]:
+    """Commits; the caller holds the account's row."""
     if replaced_token:
         _revoke_session_by_token(db, replaced_token, now)
 
@@ -212,6 +260,149 @@ def log_in(
     db.add(session)
     db.commit()
     return session, raw_token
+
+
+def challenge_owner(db: Session, raw_challenge: str) -> uuid.UUID | None:
+    return two_factor.challenge_owner(db, raw_challenge)
+
+
+@dataclass(frozen=True)
+class CompletedLogin:
+    session: UserSession
+    raw_token: str
+    email: str
+    used_recovery_code: bool
+
+
+def complete_login(
+    db: Session,
+    user_id: uuid.UUID,
+    *,
+    raw_challenge: str,
+    code: str,
+    replaced_token: str | None = None,
+) -> CompletedLogin:
+    """Account, then challenge, under lock: of two at once, one finds it gone."""
+    now = _now()
+    account = _lock_account(db, user_id)
+    challenge = two_factor.live_challenge(db, user_id, raw_challenge, now)
+    credential = two_factor.credential_of(db, user_id)
+    if (
+        account is None
+        or challenge is None
+        or not account.is_active
+        or not two_factor.is_on(credential)
+    ):
+        raise InvalidLoginChallengeError
+
+    used_recovery_code = False
+    if not two_factor.accept_totp(credential, code, now):
+        used_recovery_code = two_factor.accept_recovery_code(db, user_id, code)
+        if not used_recovery_code:
+            challenge.failed_attempts += 1
+            if challenge.failed_attempts >= settings.login_challenge_attempts:
+                db.delete(challenge)
+            # Before the error: a rollback would hand the attempt back.
+            db.commit()
+            raise InvalidCodeError
+
+    db.delete(challenge)
+    email = account.email
+    session, raw_token = _start_session(db, account, replaced_token, now)
+    return CompletedLogin(session, raw_token, email, used_recovery_code)
+
+
+def start_two_factor(
+    db: Session, current: UserSession, *, password: str
+) -> tuple[str, str]:
+    """Returns the base32 secret and the otpauth URI; kept pending until confirmed."""
+    account = confirm_password(db, current, password=password)
+    credential = two_factor.credential_of(db, account.id)
+    if two_factor.is_on(credential):
+        raise TwoFactorAlreadyOnError
+    secret = two_factor_codes.new_secret()
+    two_factor.set_pending(db, credential, account.id, secret, _now())
+    username = account.username
+    db.commit()
+    return (
+        two_factor_codes.base32_secret(secret),
+        two_factor_codes.otpauth_uri(secret, username),
+    )
+
+
+def confirm_two_factor(
+    db: Session, current: UserSession, *, password: str, code: str
+) -> tuple[str, list[str]]:
+    """Returns the address to tell and the recovery codes, shown this once."""
+    account = confirm_password(db, current, password=password)
+    now = _now()
+    credential = two_factor.credential_of(db, account.id)
+    if two_factor.is_on(credential):
+        raise TwoFactorAlreadyOnError
+    if not two_factor.is_pending(credential, now):
+        raise NoPendingTwoFactorError
+    # Notes the step too, so this code can't be used again to log in.
+    if not two_factor.accept_totp(credential, code, now):
+        raise InvalidCodeError
+    credential.enabled_at = now
+    credential.pending_until = None
+    recovery_codes = two_factor.replace_recovery_codes(db, account.id)
+    _end_other_sessions(db, current, account.id, now)
+    email = account.email
+    db.commit()
+    return email, recovery_codes
+
+
+def replace_recovery_codes(
+    db: Session, current: UserSession, *, password: str, code: str
+) -> list[str]:
+    """Needs the app, not a recovery code: without it, turn this off and on again."""
+    account = confirm_password(db, current, password=password)
+    now = _now()
+    credential = two_factor.credential_of(db, account.id)
+    if not two_factor.is_on(credential):
+        raise TwoFactorOffError
+    if not two_factor.accept_totp(credential, code, now):
+        raise InvalidCodeError
+    recovery_codes = two_factor.replace_recovery_codes(db, account.id)
+    _end_other_sessions(db, current, account.id, now)
+    db.commit()
+    return recovery_codes
+
+
+def disable_two_factor(
+    db: Session, current: UserSession, *, password: str, code: str
+) -> str:
+    """Returns the address to tell; a TOTP or a recovery code will do."""
+    account = confirm_password(db, current, password=password)
+    now = _now()
+    credential = two_factor.credential_of(db, account.id)
+    if not two_factor.is_on(credential):
+        raise TwoFactorOffError
+    if not (
+        two_factor.accept_totp(credential, code, now)
+        or two_factor.accept_recovery_code(db, account.id, code)
+    ):
+        raise InvalidCodeError
+    two_factor.remove_all(db, account.id)
+    _end_other_sessions(db, current, account.id, now)
+    email = account.email
+    db.commit()
+    return email
+
+
+def address_of(db: Session, user_id: uuid.UUID) -> str | None:
+    return db.scalar(select(User.email).where(User.id == user_id))
+
+
+def _end_other_sessions(
+    db: Session, current: UserSession, user_id: uuid.UUID, now: datetime
+) -> None:
+    db.execute(
+        update(UserSession)
+        .where(UserSession.id != current.id, *_active_sessions_of(user_id, now))
+        .values(revoked_at=now)
+    )
 
 
 def authenticate_session(db: Session, raw_token: str) -> UserSession | None:
@@ -346,7 +537,8 @@ def request_password_reset(db: Session, email: str, *, client: str) -> str | Non
     return raw_token
 
 
-def reset_password(db: Session, raw_token: str, new_password: str) -> None:
+def reset_password(db: Session, raw_token: str, new_password: str) -> uuid.UUID:
+    """Returns the account's id. Two-factor login stays on; open challenges end."""
     now = _now()
     # Account locked from here (``_usable_token``), so no login can slip a session in.
     token = _usable_token(db, PasswordResetToken, raw_token, now)
@@ -354,16 +546,20 @@ def reset_password(db: Session, raw_token: str, new_password: str) -> None:
         raise InvalidPasswordResetTokenError
     token.used_at = now
     token.user.password_hash = hash_password(new_password)
+    user_id = token.user_id
+    # Won with the old password.
+    two_factor.remove_challenges(db, user_id)
     # After a reset the only way in is the new password.
     db.execute(
         update(UserSession)
         .where(
-            UserSession.user_id == token.user_id,
+            UserSession.user_id == user_id,
             UserSession.revoked_at.is_(None),
         )
         .values(revoked_at=now)
     )
     db.commit()
+    return user_id
 
 
 def change_password(
@@ -400,6 +596,8 @@ def change_password(
             PasswordResetToken.used_at.is_(None),
         )
     )
+    # Won with the old password.
+    two_factor.remove_challenges(db, user.id)
     db.commit()
     return raw_token
 

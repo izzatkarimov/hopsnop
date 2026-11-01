@@ -1,6 +1,7 @@
 import uuid
+from collections.abc import Callable
 from datetime import datetime, timezone
-from typing import Annotated
+from typing import Annotated, TypeVar
 
 from fastapi import (
     APIRouter,
@@ -11,6 +12,7 @@ from fastapi import (
     Response,
     status,
 )
+from fastapi.responses import JSONResponse
 
 from app.api.deps import (
     ClientAddress,
@@ -28,13 +30,19 @@ from app.schemas.auth import (
     ChangePasswordRequest,
     DeleteAccountRequest,
     ForgotPasswordRequest,
+    LoginChallengeResponse,
     LoginRequest,
     MessageResponse,
+    RecoveryCodesResponse,
     RegisterRequest,
     ResendVerificationRequest,
     ResetPasswordRequest,
     RevokedSessionsResponse,
     SessionResponse,
+    TwoFactorCodeRequest,
+    TwoFactorLoginRequest,
+    TwoFactorPasswordRequest,
+    TwoFactorStartResponse,
     VerifyEmailRequest,
 )
 from app.services import auth as auth_service
@@ -128,6 +136,109 @@ def registration_notice_limit(user_id: object) -> rate_limit.Limit:
     )
 
 
+def two_factor_account_limit(user_id: object) -> rate_limit.Limit:
+    """Wrong codes, shared by every check of one; only a password holder can add any."""
+    return rate_limit.Limit(
+        "two-factor:account", str(user_id), settings.two_factor_failures_per_account
+    )
+
+
+def two_factor_failure_notice_limit(user_id: object) -> rate_limit.Limit:
+    return rate_limit.Limit(
+        "two-factor-failure-notice:account",
+        str(user_id),
+        settings.two_factor_failure_notices_per_account,
+    )
+
+
+def _two_factor_address_limit(address: str) -> rate_limit.Limit:
+    return rate_limit.Limit(
+        "two-factor:address", address, settings.two_factor_failures_per_ip
+    )
+
+
+def _failure_notice_is_due(db: DbSession, user_id: uuid.UUID) -> bool:
+    if not rate_limit.is_full(db, two_factor_account_limit(user_id)):
+        return False
+    try:
+        rate_limit.count(db, two_factor_failure_notice_limit(user_id))
+    except rate_limit.RateLimitedError:
+        return False
+    return True
+
+
+def _code_refused(
+    db: DbSession,
+    error: auth_service.InvalidCodeError,
+    user_id: uuid.UUID,
+    email_sender: EmailSender,
+    background_tasks: BackgroundTasks,
+) -> JSONResponse:
+    """Returned, not raised: an error's own response wouldn't run the background task."""
+    if _failure_notice_is_due(db, user_id):
+        _send_security_notice(
+            db,
+            auth_service.address_of(db, user_id),
+            email_sender.send_two_factor_failures,
+            background_tasks,
+        )
+    return JSONResponse(
+        status_code=error.status_code,
+        content={"detail": error.detail},
+        background=background_tasks,
+    )
+
+
+def _send_security_notice(
+    db: DbSession,
+    email: str | None,
+    send: Callable[..., None],
+    background_tasks: BackgroundTasks,
+) -> None:
+    if email and auth_service.take_place_for_security_notice(db, email=email):
+        background_tasks.add_task(send, to=email)
+
+
+_Result = TypeVar("_Result")
+
+
+def _password_and_code_checked(
+    db: DbSession,
+    current: UserSession,
+    address: str,
+    check: Callable[[], _Result],
+) -> _Result:
+    """Counted before any lock, as counting commits; each failure keeps its own count."""
+    user_id = current.user_id
+    password_limits = password_confirmation_limits(current)
+    code_limits = [
+        two_factor_account_limit(user_id),
+        _two_factor_address_limit(address),
+    ]
+    counted = rate_limit.count_all(db, [*password_limits, *code_limits])
+    password_places = counted[: len(password_limits)]
+    code_places = counted[len(password_limits) :]
+    try:
+        result = check()
+    except auth_service.AccountNoLongerExistsError:
+        # Account removed meanwhile, counters included; don't leave new counts behind.
+        rate_limit.uncount_all(db, code_places[1:])
+        rate_limit.forget(db, [*password_limits, code_limits[0]])
+        raise
+    except auth_service.WrongCurrentPasswordError:
+        rate_limit.uncount_all(db, code_places)
+        raise
+    except auth_service.InvalidCodeError:
+        rate_limit.uncount_all(db, password_places)
+        raise
+    except auth_service.AuthError:
+        # Neither was a guess: the password was right and no code was looked at.
+        rate_limit.uncount_all(db, counted)
+        raise
+    rate_limit.uncount_all(db, counted)
+    return result
+
+
 def _notice_is_due(
     db: DbSession, holder: auth_service.AddressHolder, *, email: str, client: str
 ) -> bool:
@@ -183,18 +294,22 @@ def register(
     )
 
 
-@router.post("/login", response_model=AccountResponse)
+@router.post(
+    "/login",
+    response_model=AccountResponse,
+    responses={202: {"model": LoginChallengeResponse}},
+)
 def login(
     data: LoginRequest,
     request: Request,
     response: Response,
     address: ClientAddress,
     db: DbSession,
-) -> AccountResponse:
+) -> AccountResponse | JSONResponse:
     # Counted before the password check, so simultaneous attempts can't beat the limit.
     counted = rate_limit.count_all(db, _login_limits(data.identifier, address))
     try:
-        session, raw_token = auth_service.log_in(
+        result = auth_service.log_in(
             db,
             identifier=data.identifier,
             password=data.password.get_secret_value(),
@@ -206,11 +321,184 @@ def login(
         raise
     # Only failures are limited.
     rate_limit.uncount_all(db, counted)
+    if isinstance(result, auth_service.LoginChallengeIssued):
+        challenge = LoginChallengeResponse(
+            challenge=result.raw_challenge, expires_at=result.expires_at
+        )
+        return JSONResponse(
+            status_code=status.HTTP_202_ACCEPTED,
+            content=challenge.model_dump(mode="json"),
+        )
+    session, raw_token = result
     # The account may have gone since the commit; no cookie for a session that's gone.
     account = auth_service.account_of(session)
     # The token leaves the server only in this cookie, never in the body.
     _set_session_cookie(response, raw_token)
     return AccountResponse.model_validate(account)
+
+
+@router.post("/login/two-factor", response_model=AccountResponse)
+def login_two_factor(
+    data: TwoFactorLoginRequest,
+    request: Request,
+    response: Response,
+    address: ClientAddress,
+    db: DbSession,
+    email_sender: EmailSenderDep,
+    background_tasks: BackgroundTasks,
+) -> AccountResponse | JSONResponse:
+    """The second step: only here does a session start and the cookie get set."""
+    raw_challenge = data.challenge.get_secret_value()
+    address_place = rate_limit.count(db, _two_factor_address_limit(address))
+    user_id = auth_service.challenge_owner(db, raw_challenge)
+    if user_id is None:
+        raise auth_service.InvalidLoginChallengeError
+    try:
+        account_place = rate_limit.count(db, two_factor_account_limit(user_id))
+    except rate_limit.RateLimitedError:
+        rate_limit.uncount_all(db, [address_place])
+        raise
+    try:
+        completed = auth_service.complete_login(
+            db,
+            user_id,
+            raw_challenge=raw_challenge,
+            code=data.code.get_secret_value(),
+            replaced_token=request.cookies.get(settings.session_cookie),
+        )
+    except auth_service.InvalidLoginChallengeError:
+        rate_limit.uncount_all(db, [account_place])
+        raise
+    except auth_service.InvalidCodeError as error:
+        return _code_refused(db, error, user_id, email_sender, background_tasks)
+    rate_limit.uncount_all(db, [address_place, account_place])
+    if completed.used_recovery_code:
+        _send_security_notice(
+            db, completed.email, email_sender.send_recovery_code_used, background_tasks
+        )
+    # The account may have gone since the commit; no cookie for a session that's gone.
+    account = auth_service.account_of(completed.session)
+    _set_session_cookie(response, completed.raw_token)
+    return AccountResponse.model_validate(account)
+
+
+@router.post("/two-factor/start", response_model=TwoFactorStartResponse)
+def start_two_factor(
+    data: TwoFactorPasswordRequest,
+    current: CurrentSession,
+    # Only enforces verification; the user comes from the session.
+    _verified: VerifiedUser,
+    db: DbSession,
+) -> TwoFactorStartResponse:
+    """A new secret, not active until confirmed; starting again replaces it."""
+    limits = password_confirmation_limits(current)
+    counted = rate_limit.count_all(db, limits)
+    try:
+        secret, otpauth_uri = auth_service.start_two_factor(
+            db, current, password=data.password.get_secret_value()
+        )
+    except auth_service.AccountNoLongerExistsError:
+        rate_limit.forget(db, limits)
+        raise
+    except auth_service.TwoFactorAlreadyOnError:
+        # The password was right, so this wasn't a guess.
+        rate_limit.uncount_all(db, counted)
+        raise
+    rate_limit.uncount_all(db, counted)
+    return TwoFactorStartResponse(secret=secret, otpauth_uri=otpauth_uri)
+
+
+@router.post("/two-factor/confirm", response_model=RecoveryCodesResponse)
+def confirm_two_factor(
+    data: TwoFactorCodeRequest,
+    current: CurrentSession,
+    _verified: VerifiedUser,
+    address: ClientAddress,
+    db: DbSession,
+    email_sender: EmailSenderDep,
+    background_tasks: BackgroundTasks,
+) -> RecoveryCodesResponse | JSONResponse:
+    """Turns it on; the recovery codes are shown this once. Other sessions end."""
+    user_id = current.user_id
+    try:
+        email, recovery_codes = _password_and_code_checked(
+            db,
+            current,
+            address,
+            lambda: auth_service.confirm_two_factor(
+                db,
+                current,
+                password=data.password.get_secret_value(),
+                code=data.code.get_secret_value(),
+            ),
+        )
+    except auth_service.InvalidCodeError as error:
+        return _code_refused(db, error, user_id, email_sender, background_tasks)
+    _send_security_notice(
+        db, email, email_sender.send_two_factor_enabled, background_tasks
+    )
+    return RecoveryCodesResponse(recovery_codes=recovery_codes)
+
+
+@router.post("/two-factor/recovery-codes", response_model=RecoveryCodesResponse)
+def replace_recovery_codes(
+    data: TwoFactorCodeRequest,
+    current: CurrentSession,
+    _verified: VerifiedUser,
+    address: ClientAddress,
+    db: DbSession,
+    email_sender: EmailSenderDep,
+    background_tasks: BackgroundTasks,
+) -> RecoveryCodesResponse | JSONResponse:
+    """A new set voids the old one; other sessions end."""
+    user_id = current.user_id
+    try:
+        recovery_codes = _password_and_code_checked(
+            db,
+            current,
+            address,
+            lambda: auth_service.replace_recovery_codes(
+                db,
+                current,
+                password=data.password.get_secret_value(),
+                code=data.code.get_secret_value(),
+            ),
+        )
+    except auth_service.InvalidCodeError as error:
+        return _code_refused(db, error, user_id, email_sender, background_tasks)
+    return RecoveryCodesResponse(recovery_codes=recovery_codes)
+
+
+@router.post("/two-factor/disable", response_model=MessageResponse)
+def disable_two_factor(
+    data: TwoFactorCodeRequest,
+    current: CurrentSession,
+    _verified: VerifiedUser,
+    address: ClientAddress,
+    db: DbSession,
+    email_sender: EmailSenderDep,
+    background_tasks: BackgroundTasks,
+) -> MessageResponse | JSONResponse:
+    """Removes the secret, the recovery codes and open challenges; other sessions end."""
+    user_id = current.user_id
+    try:
+        email = _password_and_code_checked(
+            db,
+            current,
+            address,
+            lambda: auth_service.disable_two_factor(
+                db,
+                current,
+                password=data.password.get_secret_value(),
+                code=data.code.get_secret_value(),
+            ),
+        )
+    except auth_service.InvalidCodeError as error:
+        return _code_refused(db, error, user_id, email_sender, background_tasks)
+    _send_security_notice(
+        db, email, email_sender.send_two_factor_disabled, background_tasks
+    )
+    return MessageResponse(message="Two-factor login is off.")
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
@@ -303,11 +591,13 @@ def forgot_password(
     dependencies=[limit_per_address("reset-password", "token_redemptions_per_ip")],
 )
 def reset_password(data: ResetPasswordRequest, db: DbSession) -> MessageResponse:
-    auth_service.reset_password(
+    user_id = auth_service.reset_password(
         db,
         data.token.get_secret_value(),
         data.new_password.get_secret_value(),
     )
+    # Whoever filled it had the old password; the owner mustn't wait out their window.
+    rate_limit.forget(db, [two_factor_account_limit(user_id)])
     return MessageResponse(message="Password has been reset.")
 
 
@@ -323,6 +613,7 @@ def change_password(
     """Needs the current password; other sessions end, this one gets a new cookie."""
     # Read first: counting commits and expires this; the session may be gone by then.
     remaining = current.expires_at - datetime.now(timezone.utc)
+    user_id = current.user_id
     limits = password_confirmation_limits(current)
     counted = rate_limit.count_all(db, limits)
     try:
@@ -337,6 +628,8 @@ def change_password(
         rate_limit.forget(db, limits)
         raise
     rate_limit.uncount_all(db, counted)
+    # Whoever filled it had the old password; the owner mustn't wait out their window.
+    rate_limit.forget(db, [two_factor_account_limit(user_id)])
     # The session keeps the time it had left, not a new lifetime.
     _set_session_cookie(
         response, raw_token, max_age=max(1, int(remaining.total_seconds()))
@@ -354,6 +647,8 @@ def _counters_named_after(
         data_export_limit(current),
         image_upload_limit(current.user_id),
         registration_notice_limit(current.user_id),
+        two_factor_account_limit(current.user_id),
+        two_factor_failure_notice_limit(current.user_id),
     ]
     for identifier in (account.username, account.email):
         limits += [

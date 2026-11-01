@@ -41,6 +41,8 @@ function me(extra: Partial<MyProfileResponse> = {}): MyProfileResponse {
     username: account.username,
     email: account.email,
     email_verified_at: account.email_verified_at,
+    two_factor_enabled: false,
+    recovery_codes_left: 0,
     display_name: account.display_name,
     bio: "Old bio",
     avatar_url: OLD_PICTURE,

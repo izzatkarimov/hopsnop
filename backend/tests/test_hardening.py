@@ -105,6 +105,10 @@ def development_app(monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
         yield client
 
 
+# Base64url of 32 bytes.
+PRODUCTION_TWO_FACTOR_KEY = "cHJvZHVjdGlvbi10d28tZmFjdG9yLWtleS1vZi0zMmI"
+
+
 def make_settings(monkeypatch: pytest.MonkeyPatch, **values: object) -> Settings:
     for name in Settings.model_fields:
         monkeypatch.delenv(name.upper(), raising=False)
@@ -117,6 +121,7 @@ def production(monkeypatch: pytest.MonkeyPatch, **values: object) -> Settings:
         "environment": "production",
         "frontend_url": "https://app.hopsnop.example",
         "rate_limit_secret": PRODUCTION_SECRET,
+        "two_factor_key": PRODUCTION_TWO_FACTOR_KEY,
         "resend_api_key": RESEND_KEY,
         "email_from": "Hopsnop <no-reply@hopsnop.example>",
         **values,
@@ -903,6 +908,11 @@ def test_limits_are_settings_with_defaults_and_cannot_be_switched_off(
         "registration_notices_per_account",
         "emails_per_address_and_ip_per_day",
         "emails_per_day",
+        "two_factor_failures_per_account",
+        "two_factor_failures_per_ip",
+        "two_factor_failure_notices_per_account",
+        "login_challenge_lifetime_minutes",
+        "login_challenge_attempts",
         "email_requests_per_ip",
         "token_redemptions_per_ip",
         "password_confirmation_failures",
@@ -911,6 +921,21 @@ def test_limits_are_settings_with_defaults_and_cannot_be_switched_off(
     ):
         with pytest.raises(ValidationError):
             production(monkeypatch, **{name: 0})
+
+
+def test_production_refuses_a_missing_or_unsafe_two_factor_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    assert production(monkeypatch).two_factor_key_bytes
+    development = make_settings(monkeypatch, environment="development")
+    for value, message in (
+        (None, "TWO_FACTOR_KEY must be set"),
+        (development.two_factor_key.get_secret_value(), "development value"),
+        ("c2hvcnQ", "32 bytes"),
+        ("not base64 at all!", "two_factor_key"),
+    ):
+        with pytest.raises(ValidationError, match=message):
+            production(monkeypatch, two_factor_key=value)
 
 
 @pytest.mark.parametrize(

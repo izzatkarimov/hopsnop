@@ -30,12 +30,15 @@ ADDRESS_SCOPES = (
     "resend-verification",
     "verify-email",
     "reset-password",
+    "two-factor:address",
 )
 ACCOUNT_SCOPES = (
     "password-confirmation:account",
     "data-export:account",
     "image-upload:account",
     "registration-notice:account",
+    "two-factor:account",
+    "two-factor-failure-notice:account",
 )
 
 _Result = TypeVar("_Result")

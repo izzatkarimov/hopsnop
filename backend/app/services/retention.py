@@ -11,11 +11,13 @@ from app.core.config import settings
 from app.core.image_store import image_store
 from app.models import (
     EmailVerificationToken,
+    LoginChallenge,
     PasswordResetToken,
     Post,
     QueuedEmail,
     RateLimit,
     Story,
+    TwoFactorCredential,
     User,
     UserSession,
 )
@@ -33,6 +35,8 @@ class Report:
     password_reset_tokens: int = 0
     rate_limit_counters: int = 0
     queued_emails: int = 0
+    login_challenges: int = 0
+    pending_two_factor_secrets: int = 0
     orphaned_pictures: int = 0
 
     @property
@@ -81,6 +85,15 @@ def _finished_counters(now: datetime) -> _Conditions:
 
 def _queued_emails_past_the_caps(now: datetime) -> _Conditions:
     return (QueuedEmail.queued_at <= now - email_caps.WINDOW,)
+
+
+def _expired_login_challenges(now: datetime) -> _Conditions:
+    return (LoginChallenge.expires_at <= now,)
+
+
+def _expired_pending_secrets(now: datetime) -> _Conditions:
+    # Null once two-factor login is on, so an active secret never matches.
+    return (TwoFactorCredential.pending_until <= now,)
 
 
 def _abandoned(now: datetime) -> _Conditions:
@@ -228,6 +241,18 @@ def _rows_of_no_use(now: datetime) -> dict[str, _Rows]:
         "queued_emails": (
             QueuedEmail.id,
             _queued_emails_past_the_caps(now),
+            False,
+            None,
+        ),
+        "login_challenges": (
+            LoginChallenge.id,
+            _expired_login_challenges(now),
+            False,
+            None,
+        ),
+        "pending_two_factor_secrets": (
+            TwoFactorCredential.user_id,
+            _expired_pending_secrets(now),
             False,
             None,
         ),

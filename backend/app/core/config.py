@@ -1,3 +1,5 @@
+import base64
+import binascii
 from datetime import timedelta
 from email.utils import parseaddr
 from typing import Literal
@@ -11,8 +13,15 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 _DEVELOPMENT_FRONTEND_URL = "http://localhost:3000"
 _DEVELOPMENT_RATE_LIMIT_SECRET = "development-only-rate-limit-secret"
 _RATE_LIMIT_SECRET_MIN_LENGTH = 32
+_DEVELOPMENT_TWO_FACTOR_KEY = "ZGV2ZWxvcG1lbnQtb25seS10d28tZmFjdG9yLWtleSE"
+_TWO_FACTOR_KEY_BYTES = 32
 # The account login limit must be this many times the per-address limit.
 _ACCOUNT_TO_ADDRESS_LIMIT_RATIO = 3
+
+
+def _decoded_key(value: str) -> bytes:
+    """Base64url, with or without padding."""
+    return base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
 
 
 class Settings(BaseSettings):
@@ -45,6 +54,8 @@ class Settings(BaseSettings):
 
     # HMAC key, so counters hold no addresses or identifiers; required in production.
     rate_limit_secret: SecretStr | None = None
+    # Encrypts two-factor secrets and keys recovery-code hashes; required in production.
+    two_factor_key: SecretStr | None = None
     # A counter resets this long after its first request.
     rate_limit_window_minutes: int = Field(default=15, gt=0)
     # The account limit must be at least 3x this (checked below): unaligned windows
@@ -63,6 +74,14 @@ class Settings(BaseSettings):
     emails_per_address_and_ip_per_day: int = Field(default=5, gt=0)
     # Silent, in any 24 hours: keep it under what the email provider's plan allows.
     emails_per_day: int = Field(default=80, gt=0)
+    # Wrong codes in any two-factor check; only a password holder can use these up.
+    two_factor_failures_per_account: int = Field(default=5, gt=0)
+    two_factor_failures_per_ip: int = Field(default=30, gt=0)
+    # Emails to the owner when the account's count fills; past this, none and no sign.
+    two_factor_failure_notices_per_account: int = Field(default=1, gt=0)
+    login_challenge_lifetime_minutes: int = Field(default=5, gt=0)
+    # Wrong codes before a login challenge is void and the password is asked again.
+    login_challenge_attempts: int = Field(default=3, gt=0)
     # For /auth/forgot-password and /auth/resend-verification, each.
     email_requests_per_ip: int = Field(default=5, gt=0)
     # For /auth/verify-email and /auth/reset-password, each.
@@ -110,6 +129,19 @@ class Settings(BaseSettings):
             raise ValueError("must be an absolute http(s) URL")
         return value.rstrip("/")
 
+    @field_validator("two_factor_key")
+    @classmethod
+    def _validate_two_factor_key(cls, value: SecretStr | None) -> SecretStr | None:
+        if value is None:
+            return None
+        try:
+            key = _decoded_key(value.get_secret_value())
+        except (binascii.Error, ValueError):
+            raise ValueError("must be base64url") from None
+        if len(key) != _TWO_FACTOR_KEY_BYTES:
+            raise ValueError(f"must decode to {_TWO_FACTOR_KEY_BYTES} bytes")
+        return value
+
     @field_validator("resend_api_key", "email_from", mode="before")
     @classmethod
     def _blank_is_not_set(cls, value: object) -> object:
@@ -149,6 +181,8 @@ class Settings(BaseSettings):
                 self.frontend_url = _DEVELOPMENT_FRONTEND_URL
             if self.rate_limit_secret is None:
                 self.rate_limit_secret = SecretStr(_DEVELOPMENT_RATE_LIMIT_SECRET)
+            if self.two_factor_key is None:
+                self.two_factor_key = SecretStr(_DEVELOPMENT_TWO_FACTOR_KEY)
             return self
 
         if self.frontend_url is None:
@@ -165,6 +199,10 @@ class Settings(BaseSettings):
             )
         if secret.get_secret_value() == _DEVELOPMENT_RATE_LIMIT_SECRET:
             raise ValueError("RATE_LIMIT_SECRET must not be the development value")
+        if self.two_factor_key is None:
+            raise ValueError("TWO_FACTOR_KEY must be set in production")
+        if self.two_factor_key.get_secret_value() == _DEVELOPMENT_TWO_FACTOR_KEY:
+            raise ValueError("TWO_FACTOR_KEY must not be the development value")
         # Without them, verification and reset links would never arrive.
         if self.resend_api_key is None:
             raise ValueError("RESEND_API_KEY must be set in production")
@@ -202,6 +240,14 @@ class Settings(BaseSettings):
     @property
     def rate_limit_window(self) -> timedelta:
         return timedelta(minutes=self.rate_limit_window_minutes)
+
+    @property
+    def two_factor_key_bytes(self) -> bytes:
+        return _decoded_key(self.two_factor_key.get_secret_value())
+
+    @property
+    def login_challenge_lifetime(self) -> timedelta:
+        return timedelta(minutes=self.login_challenge_lifetime_minutes)
 
     @property
     def email_token_cooldown(self) -> timedelta:

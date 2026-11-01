@@ -16,16 +16,20 @@ from app.core.security import PASSWORD_MAX_LENGTH, hash_password, hash_token
 from app.db.base import Base
 from app.db.session import engine
 from app.main import app
+from app.core import two_factor as two_factor_codes
 from app.models import (
     EmailVerificationToken,
     Follow,
     Like,
+    LoginChallenge,
     PasswordResetToken,
     Post,
     RateLimit,
+    RecoveryCode,
     Repost,
     Story,
     StoryView,
+    TwoFactorCredential,
     User,
     UserSession,
 )
@@ -170,6 +174,30 @@ def library(
         session.add_all(rows)
         session.flush()
 
+    add(
+        TwoFactorCredential(
+            user_id=alice.id,
+            secret_ciphertext=two_factor_codes.encrypt_secret(b"s" * 20, alice.id),
+            enabled_at=NOW - HOUR,
+            last_used_step=98765432,
+            created_at=NOW - 2 * HOUR,
+        ),
+        # What another account has set up, half way.
+        TwoFactorCredential(
+            user_id=bob.id,
+            secret_ciphertext=two_factor_codes.encrypt_secret(b"b" * 20, bob.id),
+            pending_until=NOW + HOUR,
+            created_at=NOW - HOUR,
+        ),
+        RecoveryCode(user_id=alice.id, code_hash="the hash of a recovery code"),
+        LoginChallenge(
+            user_id=alice.id,
+            token_hash="the hash of a login challenge",
+            created_at=NOW - HOUR,
+            expires_at=NOW + HOUR,
+        ),
+    )
+
     alone = add_post(session, alice, "Alice on her own", created_at=at(1))
     answered = add_post(session, alice, "Alice, answered by Bob", created_at=at(2))
     of_bob = add_post(session, bob, "Bob's own post", created_at=at(3))
@@ -302,6 +330,7 @@ def library(
     expected = {
         "export_version": 2,
         "generated_at": stamp(NOW),
+        "two_factor": {"enabled": True, "enabled_at": stamp(NOW - HOUR)},
         "account": {
             "id": str(alice.id),
             "username": "alice",
@@ -381,6 +410,7 @@ def test_export_of_an_account_with_nothing_has_every_part_and_no_entries(
             "created_at": stamp(alice_account.created_at),
             "updated_at": stamp(alice_account.updated_at),
         },
+        "two_factor": {"enabled": False, "enabled_at": None},
         "sessions": [
             {
                 "created_at": stamp(own.created_at),
@@ -410,6 +440,7 @@ def test_parts_and_fields_come_in_the_documented_order(
         "export_version",
         "generated_at",
         "account",
+        "two_factor",
         "sessions",
         "account_requests",
         "posts",
@@ -977,6 +1008,35 @@ MATRIX: dict[str, Exported | Excluded] = {
     "rate_limits.key_hash": _limiter,
     "rate_limits.window_start": _limiter,
     "rate_limits.count": _limiter,
+    "two_factor_credentials.user_id": _whose,
+    "two_factor_credentials.secret_ciphertext": Excluded(
+        CREDENTIAL, "The sealed secret that proves who someone is at login."
+    ),
+    "two_factor_credentials.pending_until": Excluded(
+        INTERNAL, "Only says when an unconfirmed setup stops working."
+    ),
+    "two_factor_credentials.enabled_at": Exported("two_factor.enabled_at"),
+    "two_factor_credentials.last_used_step": Excluded(
+        NOT_USER_DATA, "A control: only stops a code being used twice."
+    ),
+    "two_factor_credentials.created_at": Excluded(
+        INTERNAL, "When the secret was made; the export says when it was turned on."
+    ),
+    "recovery_codes.id": Excluded(INTERNAL, "Names a row of a code; says nothing."),
+    "recovery_codes.user_id": _whose,
+    "recovery_codes.code_hash": _hash,
+    "login_challenges.id": Excluded(INTERNAL, "Names a row of a login under way."),
+    "login_challenges.user_id": _whose,
+    "login_challenges.token_hash": _hash,
+    "login_challenges.failed_attempts": Excluded(
+        NOT_USER_DATA, "A control on one login under way, gone within five minutes."
+    ),
+    "login_challenges.created_at": Excluded(
+        INTERNAL, "One login under way, gone within five minutes; not a record."
+    ),
+    "login_challenges.expires_at": Excluded(
+        INTERNAL, "One login under way, gone within five minutes; not a record."
+    ),
     "queued_emails.id": _email_cap,
     "queued_emails.address_hash": _email_cap,
     "queued_emails.client_hash": _email_cap,
@@ -987,6 +1047,7 @@ DERIVED = {
     "export_version",
     "generated_at",
     "sessions[].is_current",
+    "two_factor.enabled",
     "stories[].view_count",
     "followers[].created_at",
 }
@@ -1034,8 +1095,14 @@ def test_every_table_that_holds_something_of_an_account_has_a_part_in_the_export
         for column in table.columns
         if any(key.column.table.name == "users" for key in column.foreign_keys)
     }
-    assert exported == referring | {"users"}
-    assert set(Base.metadata.tables) - exported == {"queued_emails", "rate_limits"}
+    # Secrets and logins under way: the export says only whether it's on and since when.
+    only_credentials = {"recovery_codes", "login_challenges"}
+    assert exported == (referring - only_credentials) | {"users"}
+    assert set(Base.metadata.tables) - exported == {
+        "queued_emails",
+        "rate_limits",
+        *only_credentials,
+    }
 
 
 def test_document_holds_what_the_matrix_says_and_nothing_besides(
@@ -1122,7 +1189,7 @@ def test_schemas_of_the_document_take_nothing_over_from_a_row_as_a_whole() -> No
         and model is not export_schema.BaseModel
     ]
 
-    assert len(models) == 11
+    assert len(models) == 12
     for model in models:
         assert not model.model_config.get("from_attributes"), model.__name__
         assert model.model_config.get("extra") in (None, "ignore"), model.__name__
@@ -1137,10 +1204,12 @@ def test_documented_schema_is_exactly_this() -> None:
         assert schemas[name]["required"] == list(schemas[name]["properties"])
         return list(schemas[name]["properties"])
 
+    assert fields("ExportedTwoFactor") == ["enabled", "enabled_at"]
     assert fields("AccountExport") == [
         "export_version",
         "generated_at",
         "account",
+        "two_factor",
         "sessions",
         "account_requests",
         "posts",
@@ -1682,6 +1751,7 @@ def statements() -> Statements:
 
 
 PARTS = [
+    "FROM two_factor_credentials",
     "FROM sessions",
     "FROM email_verification_tokens",
     "FROM password_reset_tokens",
@@ -1708,7 +1778,8 @@ def test_each_part_is_read_by_one_statement_with_the_account_held_still(
     assert len(selects) == len(PARTS)
     for statement, source in zip(selects, PARTS):
         assert source in statement, statement
-        assert "ORDER BY" in statement
+        # One row per account.
+        assert "ORDER BY" in statement or source == "FROM two_factor_credentials"
         if source == "FROM stories":
             assert statement.endswith("FOR KEY SHARE OF stories"), statement
         else:

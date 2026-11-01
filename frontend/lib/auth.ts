@@ -39,6 +39,35 @@ export type DeleteAccountRequest = {
   password: string;
 };
 
+/** Password right and two-factor login on: no session yet. */
+export type LoginChallengeResponse = {
+  challenge: string;
+  expires_at: string;
+};
+
+export type TwoFactorStartResponse = {
+  secret: string;
+  otpauth_uri: string;
+};
+
+export type RecoveryCodesResponse = {
+  recovery_codes: string[];
+};
+
+export type TwoFactorPasswordRequest = {
+  password: string;
+};
+
+export type TwoFactorCodeRequest = {
+  password: string;
+  code: string;
+};
+
+export type TwoFactorLoginRequest = {
+  challenge: string;
+  code: string;
+};
+
 /* The backend reports text only; keep in step with app/services/auth.py. */
 const EMAIL_NOT_VERIFIED = "Email address is not verified.";
 const USERNAME_TAKEN = "Username already in use.";

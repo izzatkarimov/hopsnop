@@ -144,6 +144,10 @@ class Outbox:
         self.verification: list[tuple[str, str]] = []
         self.password_reset: list[tuple[str, str]] = []
         self.registration_notice: list[str] = []
+        self.two_factor_enabled: list[str] = []
+        self.two_factor_disabled: list[str] = []
+        self.recovery_code_used: list[str] = []
+        self.two_factor_failures: list[str] = []
 
     def send_email_verification(self, *, to: str, url: str) -> None:
         self.verification.append((to, url))
@@ -153,6 +157,18 @@ class Outbox:
 
     def send_registration_notice(self, *, to: str) -> None:
         self.registration_notice.append(to)
+
+    def send_two_factor_enabled(self, *, to: str) -> None:
+        self.two_factor_enabled.append(to)
+
+    def send_two_factor_disabled(self, *, to: str) -> None:
+        self.two_factor_disabled.append(to)
+
+    def send_recovery_code_used(self, *, to: str) -> None:
+        self.recovery_code_used.append(to)
+
+    def send_two_factor_failures(self, *, to: str) -> None:
+        self.two_factor_failures.append(to)
 
 
 @pytest.fixture

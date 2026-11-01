@@ -17,7 +17,12 @@ from app.services import users as users_service
 from helpers import SENSITIVE_KEYS, add_user, columns, keys_in, log_in
 
 EDITABLE = {"display_name", "bio"}
-PRIVATE_ONLY = {"email", "email_verified_at"}
+PRIVATE_ONLY = {
+    "email",
+    "email_verified_at",
+    "two_factor_enabled",
+    "recovery_codes_left",
+}
 NEVER_EXPOSED = {"password_hash", "is_active", "updated_at"}
 
 PROTECTED_COLUMNS = {

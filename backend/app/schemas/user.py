@@ -135,6 +135,8 @@ class MyProfileResponse(BaseModel):
     bio: str | None
     avatar_url: str | None
     email_verified_at: datetime | None
+    two_factor_enabled: bool
+    recovery_codes_left: int
     followers_count: int
     following_count: int
     created_at: datetime

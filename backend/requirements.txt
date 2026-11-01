@@ -13,6 +13,9 @@ alembic==1.20.0
 
 argon2-cffi==25.1.0
 
+# Authenticated encryption of two-factor secrets (app.core.two_factor).
+cryptography==50.0.2
+
 # Sending account email through Resend's HTTP API (app.services.email).
 # FastAPI's TestClient uses it as well.
 httpx==0.28.1

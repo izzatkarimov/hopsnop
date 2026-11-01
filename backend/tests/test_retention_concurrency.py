@@ -617,6 +617,8 @@ def test_purges_at_once_remove_every_row_once(
         "password_reset_tokens": 10,
         "rate_limit_counters": 30,
         "queued_emails": 0,
+        "login_challenges": 0,
+        "pending_two_factor_secrets": 0,
         "orphaned_pictures": 0,
     }
     assert len(stored_pictures()) == 1

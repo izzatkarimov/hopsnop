@@ -17,13 +17,16 @@ from app.models import (
     EmailVerificationToken,
     Follow,
     Like,
+    LoginChallenge,
     PasswordResetToken,
     Post,
     QueuedEmail,
     RateLimit,
+    RecoveryCode,
     Repost,
     Story,
     StoryView,
+    TwoFactorCredential,
     User,
     UserSession,
 )
@@ -114,6 +117,8 @@ def counters_named_after(user_id: object, username: str, email: str) -> list[str
             "data-export:account",
             "image-upload:account",
             "registration-notice:account",
+            "two-factor:account",
+            "two-factor-failure-notice:account",
         )
     ]
     for identifier in (username, email):
@@ -157,6 +162,8 @@ def traces_of(session: Session, user: User) -> Traces:
         *session.scalars(
             select(PasswordResetToken.token_hash).where(owned(PasswordResetToken))
         ),
+        *session.scalars(select(RecoveryCode.code_hash).where(owned(RecoveryCode))),
+        *session.scalars(select(LoginChallenge.token_hash).where(owned(LoginChallenge))),
     ]
     return Traces(
         user_id=user.id,
@@ -175,6 +182,7 @@ def assert_nothing_left(session: Session, traces: Traces) -> None:
     assert what_is_left_of(session, user_id=traces.user_id, texts=traces.texts) == []
     assert count(session, RateLimit, RateLimit.key_hash.in_(traces.counters)) == 0
     assert count(session, QueuedEmail, QueuedEmail.address_hash == traces.address_hash) == 0
+    assert count(session, TwoFactorCredential, TwoFactorCredential.user_id == traces.user_id) == 0
     assert count(session, User, User.avatar_id.in_(traces.pictures)) == 0
     assert count(session, Story, Story.media_id.in_(traces.pictures)) == 0
     assert stored_pictures().isdisjoint(traces.pictures)
@@ -391,6 +399,26 @@ def queued_emails(world: World) -> None:
     )
 
 
+def two_factor_login(world: World) -> None:
+    now = datetime.now(timezone.utc)
+    user_id = world.alice.id
+    world.add(
+        TwoFactorCredential(
+            user_id=user_id,
+            secret_ciphertext=b"sealed",
+            enabled_at=now,
+            created_at=now,
+        ),
+        RecoveryCode(user_id=user_id, code_hash="a recovery code's hash"),
+        LoginChallenge(
+            user_id=user_id,
+            token_hash="a login challenge's hash",
+            created_at=now,
+            expires_at=now + HOUR,
+        ),
+    )
+
+
 def everything(world: World) -> None:
     for kind in KINDS[:-1]:
         kind(world)
@@ -409,6 +437,7 @@ KINDS = [
     outstanding_links,
     counted_failures,
     queued_emails,
+    two_factor_login,
     everything,
 ]
 
@@ -459,7 +488,7 @@ def test_scan_looks_into_every_column_that_can_refer_to_an_account(
         for column in table.columns
         if any(key.column.table.name == "users" for key in column.foreign_keys)
     }
-    assert len(referring) == 10
+    assert len(referring) == 13
     assert set(found) == referring | {
         "users.id (the id)",
         "posts.content ('Alice asked 1')",

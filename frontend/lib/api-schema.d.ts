@@ -38,6 +38,106 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/login/two-factor": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Login Two Factor
+         * @description The second step: only here does a session start and the cookie get set.
+         */
+        post: operations["login_two_factor_auth_login_two_factor_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/two-factor/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Two Factor
+         * @description A new secret, not active until confirmed; starting again replaces it.
+         */
+        post: operations["start_two_factor_auth_two_factor_start_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/two-factor/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm Two Factor
+         * @description Turns it on; the recovery codes are shown this once. Other sessions end.
+         */
+        post: operations["confirm_two_factor_auth_two_factor_confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/two-factor/recovery-codes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Replace Recovery Codes
+         * @description A new set voids the old one; other sessions end.
+         */
+        post: operations["replace_recovery_codes_auth_two_factor_recovery_codes_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/two-factor/disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Disable Two Factor
+         * @description Removes the secret, the recovery codes and open challenges; other sessions end.
+         */
+        post: operations["disable_two_factor_auth_two_factor_disable_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/logout": {
         parameters: {
             query?: never;
@@ -832,6 +932,19 @@ export interface components {
             /** Like Count */
             like_count: number;
         };
+        /**
+         * LoginChallengeResponse
+         * @description The password was right; a code is needed, and no session exists yet.
+         */
+        LoginChallengeResponse: {
+            /** Challenge */
+            challenge: string;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+        };
         /** LoginRequest */
         LoginRequest: {
             /** Identifier */
@@ -869,6 +982,10 @@ export interface components {
             avatar_url: string | null;
             /** Email Verified At */
             email_verified_at: string | null;
+            /** Two Factor Enabled */
+            two_factor_enabled: boolean;
+            /** Recovery Codes Left */
+            recovery_codes_left: number;
             /** Followers Count */
             followers_count: number;
             /** Following Count */
@@ -971,6 +1088,14 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+        };
+        /**
+         * RecoveryCodesResponse
+         * @description Shown this once; only hashes are kept.
+         */
+        RecoveryCodesResponse: {
+            /** Recovery Codes */
+            recovery_codes: string[];
         };
         /** RegisterRequest */
         RegisterRequest: {
@@ -1110,6 +1235,47 @@ export interface components {
             /** Viewed */
             viewed: boolean;
         };
+        /** TwoFactorCodeRequest */
+        TwoFactorCodeRequest: {
+            /**
+             * Password
+             * Format: password
+             */
+            password: string;
+            /**
+             * Code
+             * Format: password
+             */
+            code: string;
+        };
+        /** TwoFactorLoginRequest */
+        TwoFactorLoginRequest: {
+            /**
+             * Challenge
+             * Format: password
+             */
+            challenge: string;
+            /**
+             * Code
+             * Format: password
+             */
+            code: string;
+        };
+        /** TwoFactorPasswordRequest */
+        TwoFactorPasswordRequest: {
+            /**
+             * Password
+             * Format: password
+             */
+            password: string;
+        };
+        /** TwoFactorStartResponse */
+        TwoFactorStartResponse: {
+            /** Secret */
+            secret: string;
+            /** Otpauth Uri */
+            otpauth_uri: string;
+        };
         /**
          * UpdatePostRequest
          * @description The text is all that can change.
@@ -1242,6 +1408,180 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AccountResponse"];
+                };
+            };
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginChallengeResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    login_two_factor_auth_login_two_factor_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TwoFactorLoginRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_two_factor_auth_two_factor_start_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TwoFactorPasswordRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TwoFactorStartResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    confirm_two_factor_auth_two_factor_confirm_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TwoFactorCodeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecoveryCodesResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    replace_recovery_codes_auth_two_factor_recovery_codes_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TwoFactorCodeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecoveryCodesResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    disable_two_factor_auth_two_factor_disable_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TwoFactorCodeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessageResponse"];
                 };
             };
             /** @description Validation Error */

@@ -88,6 +88,17 @@ def count(db: Session, limit: Limit) -> Reservation:
     raise RateLimitedError(retry_after=max(1, math.ceil(remaining)))
 
 
+def is_full(db: Session, limit: Limit) -> bool:
+    """Whether every place of a running window is taken; takes none, commits nothing."""
+    counted = db.scalar(
+        select(RateLimit.count).where(
+            RateLimit.key_hash == key_hash(limit.scope, limit.subject),
+            RateLimit.window_start > _now() - settings.rate_limit_window,
+        )
+    )
+    return counted is not None and counted >= limit.maximum
+
+
 def count_all(db: Session, limits: Sequence[Limit]) -> list[Reservation]:
     """All or none; a request the narrowest limit refuses never reaches wider ones."""
     taken: list[Reservation] = []

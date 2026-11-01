@@ -17,6 +17,7 @@ from app.models import (
     EmailVerificationToken,
     Follow,
     Like,
+    LoginChallenge,
     PasswordResetToken,
     Post,
     QueuedEmail,
@@ -24,6 +25,7 @@ from app.models import (
     Repost,
     Story,
     StoryView,
+    TwoFactorCredential,
     User,
     UserSession,
 )
@@ -54,6 +56,8 @@ NOTHING = {
     "password_reset_tokens": 0,
     "rate_limit_counters": 0,
     "queued_emails": 0,
+    "login_challenges": 0,
+    "pending_two_factor_secrets": 0,
     "orphaned_pictures": 0,
 }
 
@@ -437,6 +441,81 @@ def test_with_no_period_a_row_is_removed_the_moment_it_ends(
     assert purge(session) == removed(**{category: 1})
     assert not exists(session, *ended)
     assert exists(session, *not_yet)
+
+
+def add_challenge(session: Session, user: User, expires_at: datetime) -> uuid.UUID:
+    row = LoginChallenge(
+        user_id=user.id,
+        token_hash=uuid.uuid4().hex,
+        created_at=expires_at - timedelta(minutes=5),
+        expires_at=expires_at,
+    )
+    session.add(row)
+    session.flush()
+    return row.id
+
+
+def add_credential(
+    session: Session,
+    user: User,
+    *,
+    pending_until: datetime | None = None,
+    enabled_at: datetime | None = None,
+) -> uuid.UUID:
+    session.add(
+        TwoFactorCredential(
+            user_id=user.id,
+            secret_ciphertext=b"sealed",
+            pending_until=pending_until,
+            enabled_at=enabled_at,
+            created_at=LONG_AGO,
+        )
+    )
+    session.flush()
+    return user.id
+
+
+def test_a_login_challenge_goes_once_it_has_expired(session: Session) -> None:
+    gone = add_challenge(session, add_user(session, "alice"), NOW)
+    kept = add_challenge(session, add_user(session, "bob"), NOW + A_MOMENT)
+
+    assert retention.pending(session, NOW).login_challenges == 1
+    assert purge(session) == removed(login_challenges=1)
+
+    assert not exists(session, LoginChallenge, gone)
+    assert exists(session, LoginChallenge, kept)
+
+
+def test_a_pending_secret_goes_once_it_has_expired_and_an_active_one_never(
+    session: Session,
+) -> None:
+    gone = add_credential(session, add_user(session, "alice"), pending_until=NOW)
+    kept = add_credential(
+        session, add_user(session, "bob"), pending_until=NOW + A_MOMENT
+    )
+    active = add_credential(session, add_user(session, "carol"), enabled_at=LONG_AGO)
+
+    assert retention.pending(session, NOW).pending_two_factor_secrets == 1
+    assert purge(session) == removed(pending_two_factor_secrets=1)
+
+    assert not exists(session, TwoFactorCredential, gone)
+    assert exists(session, TwoFactorCredential, kept)
+    assert exists(session, TwoFactorCredential, active)
+
+
+def test_a_dry_run_reports_expired_challenges_and_pending_secrets(
+    session: Session, command, capsys: pytest.CaptureFixture[str]
+) -> None:
+    alice = add_user(session, "alice")
+    add_challenge(session, alice, LONG_AGO)
+    add_credential(session, alice, pending_until=LONG_AGO)
+
+    assert command([]) == 0
+
+    counted = counts_in(capsys.readouterr().out, "Would remove:")
+    assert counted["login challenges"] == 1
+    assert counted["pending two factor secrets"] == 1
+    assert count(session, LoginChallenge) == count(session, TwoFactorCredential) == 1
 
 
 def test_a_queued_email_is_kept_for_24_hours_and_no_longer(session: Session) -> None:
@@ -867,6 +946,8 @@ def a_world(session: Session) -> dict[str, object]:
     add_token(session, PasswordResetToken, bob, expires_at=NOW + timedelta(minutes=5))
     add_counter(session, NOW - timedelta(minutes=1))
     add_queued_email(session, NOW - timedelta(hours=23))
+    add_challenge(session, alice, NOW + timedelta(minutes=1))
+    add_credential(session, alice, enabled_at=LONG_AGO)
     session.flush()
     kept = snapshot(session)
 
@@ -894,6 +975,8 @@ def a_world(session: Session) -> dict[str, object]:
     )
     add_counter(session, LONG_AGO)
     add_queued_email(session, LONG_AGO)
+    add_challenge(session, bob, LONG_AGO)
+    add_credential(session, bob, pending_until=LONG_AGO)
     add_unverified(session, "ghost", LONG_AGO)
     session.flush()
     return kept
@@ -917,6 +1000,8 @@ EVERYTHING_OF_NO_USE = {
     "password_reset_tokens": 1,
     "rate_limit_counters": 1,
     "queued_emails": 1,
+    "login_challenges": 1,
+    "pending_two_factor_secrets": 1,
     "orphaned_pictures": 0,
 }
 
@@ -1023,7 +1108,7 @@ def test_a_second_run_removes_nothing_more(session: Session) -> None:
     kept = a_world(session)
 
     first = retention.purge(session, NOW)
-    assert first.total == 8
+    assert first.total == 10
     assert first.as_dict() == EVERYTHING_OF_NO_USE
 
     for _ in range(3):
@@ -1142,6 +1227,8 @@ def test_a_failure_keeps_what_was_done_and_says_how_far_it_got(
         password_reset_tokens=1,
         rate_limit_counters=1,
         queued_emails=1,
+        login_challenges=1,
+        pending_two_factor_secrets=1,
     )
     assert snapshot(session) == kept
 
@@ -1248,7 +1335,7 @@ def command(
 
 
 def counts_in(output: str, heading: str) -> dict[str, int]:
-    lines = output[output.index(heading) :].splitlines()[1:10]
+    lines = output[output.index(heading) :].splitlines()[1:12]
     return {
         " ".join(words[:-1]): int(words[-1]) for words in map(str.split, lines)
     }
@@ -1281,6 +1368,8 @@ def test_command_removes_nothing_unless_told_to(
         "password reset tokens": 0,
         "rate limit counters": 1,
         "queued emails": 0,
+        "login challenges": 0,
+        "pending two factor secrets": 0,
         "orphaned pictures": 0,
         "total": 5,
     }

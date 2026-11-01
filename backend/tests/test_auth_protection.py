@@ -13,11 +13,20 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core import two_factor as two_factor_codes
 from app.core.config import settings
 from app.core.security import generate_token, hash_token
 from app.main import app
-from app.models import EmailVerificationToken, PasswordResetToken, User, UserSession
+from app.models import (
+    EmailVerificationToken,
+    PasswordResetToken,
+    RecoveryCode,
+    TwoFactorCredential,
+    User,
+    UserSession,
+)
 from app.services import auth as auth_service
+from app.services import two_factor as two_factor_service
 from app.services.email import (
     ConsoleEmailSender,
     ResendEmailSender,
@@ -466,6 +475,12 @@ class SendTimes:
     def send_registration_notice(self, *, to: str) -> None:
         self._note("registration notice")
 
+    def send_recovery_code_used(self, *, to: str) -> None:
+        self._note("recovery code")
+
+    def send_two_factor_failures(self, *, to: str) -> None:
+        self._note("two-factor failures")
+
 
 def post_as_a_server_would(path: str, body: dict, messages: list[dict]) -> None:
     payload = json.dumps(body).encode()
@@ -534,3 +549,65 @@ def test_email_is_sent_once_and_only_after_the_whole_response(
 
     assert messages[0]["status"] == status
     assert sender.calls == [(kind, True)]
+
+
+def two_factor_login_for_alice(session: Session) -> tuple[bytes, str, str]:
+    alice = add_user(session, "alice")
+    secret = b"s" * 20
+    now = datetime.now(timezone.utc)
+    recovery = "AAAA-BBBB-CCCC-DDDD"
+    session.add_all(
+        [
+            TwoFactorCredential(
+                user_id=alice.id,
+                secret_ciphertext=two_factor_codes.encrypt_secret(secret, alice.id),
+                enabled_at=now,
+                created_at=now,
+            ),
+            RecoveryCode(
+                user_id=alice.id,
+                code_hash=two_factor_codes.recovery_code_hash(alice.id, recovery),
+            ),
+        ]
+    )
+    session.flush()
+    challenge, _ = two_factor_service.issue_challenge(session, alice.id, now)
+    session.flush()
+    return secret, recovery, challenge
+
+
+def test_the_recovery_code_notice_is_sent_only_after_the_whole_response(
+    make_client: Callable[..., TestClient], session: Session
+) -> None:
+    _, recovery, challenge = two_factor_login_for_alice(session)
+    make_client()
+    messages: list[dict] = []
+    sender = SendTimes(messages)
+    app.dependency_overrides[get_email_sender] = lambda: sender
+
+    post_as_a_server_would(
+        "/auth/login/two-factor", {"challenge": challenge, "code": recovery}, messages
+    )
+
+    assert messages[0]["status"] == 200
+    assert sender.calls == [("recovery code", True)]
+
+
+def test_the_failure_notice_is_sent_only_after_the_whole_refusal(
+    make_client: Callable[..., TestClient],
+    session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _, _, challenge = two_factor_login_for_alice(session)
+    make_client()
+    monkeypatch.setattr(settings, "two_factor_failures_per_account", 1)
+    messages: list[dict] = []
+    sender = SendTimes(messages)
+    app.dependency_overrides[get_email_sender] = lambda: sender
+
+    post_as_a_server_would(
+        "/auth/login/two-factor", {"challenge": challenge, "code": "000000"}, messages
+    )
+
+    assert messages[0]["status"] == 400
+    assert sender.calls == [("two-factor failures", True)]

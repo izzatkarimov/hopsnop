@@ -98,6 +98,8 @@ def assert_gone(
                 "data-export:account",
                 "image-upload:account",
                 "registration-notice:account",
+                "two-factor:account",
+                "two-factor-failure-notice:account",
             )
         ]
         for name in names:

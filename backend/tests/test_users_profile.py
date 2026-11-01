@@ -16,6 +16,8 @@ MY_FIELDS = {
     "bio",
     "avatar_url",
     "email_verified_at",
+    "two_factor_enabled",
+    "recovery_codes_left",
     "followers_count",
     "following_count",
     "created_at",
@@ -100,7 +102,7 @@ def test_own_profile_takes_the_same_queries_however_many_followers(
     with recorded_selects() as with_followers:
         assert alice_client.get("/users/me").json()["followers_count"] == 5
 
-    assert len(without_followers) == len(with_followers) == 2
+    assert len(without_followers) == len(with_followers) == 3
 
 
 def test_own_profile_requires_authentication(client: TestClient) -> None:

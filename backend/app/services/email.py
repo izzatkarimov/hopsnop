@@ -24,6 +24,14 @@ class EmailSender(Protocol):
 
     def send_registration_notice(self, *, to: str) -> None: ...
 
+    def send_two_factor_enabled(self, *, to: str) -> None: ...
+
+    def send_two_factor_disabled(self, *, to: str) -> None: ...
+
+    def send_recovery_code_used(self, *, to: str) -> None: ...
+
+    def send_two_factor_failures(self, *, to: str) -> None: ...
+
 
 class ConsoleEmailSender:
     """Development only; WARNING so it shows with the default logging setup."""
@@ -36,6 +44,18 @@ class ConsoleEmailSender:
 
     def send_registration_notice(self, *, to: str) -> None:
         logger.warning("[development] Registration notice for %s", to)
+
+    def send_two_factor_enabled(self, *, to: str) -> None:
+        logger.warning("[development] Two-factor on notice for %s", to)
+
+    def send_two_factor_disabled(self, *, to: str) -> None:
+        logger.warning("[development] Two-factor off notice for %s", to)
+
+    def send_recovery_code_used(self, *, to: str) -> None:
+        logger.warning("[development] Recovery code notice for %s", to)
+
+    def send_two_factor_failures(self, *, to: str) -> None:
+        logger.warning("[development] Two-factor failures notice for %s", to)
 
 
 class Link(str):
@@ -111,6 +131,56 @@ def registration_notice_email() -> Email:
     )
 
 
+def _if_it_was_not_you() -> tuple[str, ...]:
+    return (
+        "If that wasn't you, someone has your password. Change it now:",
+        Link(forgot_password_url()),
+    )
+
+
+def two_factor_enabled_email() -> Email:
+    return Email(
+        subject="Two-factor login is on for your Hopsnop account",
+        paragraphs=(
+            "Two-factor login was just turned on for your Hopsnop account.",
+            *_if_it_was_not_you(),
+        ),
+    )
+
+
+def two_factor_disabled_email() -> Email:
+    return Email(
+        subject="Two-factor login is off for your Hopsnop account",
+        paragraphs=(
+            "Two-factor login was just turned off for your Hopsnop account.",
+            *_if_it_was_not_you(),
+        ),
+    )
+
+
+def recovery_code_used_email() -> Email:
+    return Email(
+        subject="A recovery code was used on your Hopsnop account",
+        paragraphs=(
+            "A recovery code was just used to log in to your Hopsnop account. It "
+            "can't be used again.",
+            *_if_it_was_not_you(),
+        ),
+    )
+
+
+def two_factor_failures_email() -> Email:
+    return Email(
+        subject="Wrong two-factor codes on your Hopsnop account",
+        paragraphs=(
+            "Your Hopsnop password was entered correctly, and then the two-factor "
+            "code was wrong several times. If that wasn't you, someone has your "
+            "password. Change it now:",
+            Link(forgot_password_url()),
+        ),
+    )
+
+
 class ResendEmailSender:
     """Failures are logged by kind and status, not raised: the user can ask again."""
 
@@ -133,6 +203,18 @@ class ResendEmailSender:
 
     def send_registration_notice(self, *, to: str) -> None:
         self._send(to, registration_notice_email(), "registration notice")
+
+    def send_two_factor_enabled(self, *, to: str) -> None:
+        self._send(to, two_factor_enabled_email(), "two-factor on")
+
+    def send_two_factor_disabled(self, *, to: str) -> None:
+        self._send(to, two_factor_disabled_email(), "two-factor off")
+
+    def send_recovery_code_used(self, *, to: str) -> None:
+        self._send(to, recovery_code_used_email(), "recovery code")
+
+    def send_two_factor_failures(self, *, to: str) -> None:
+        self._send(to, two_factor_failures_email(), "two-factor failures")
 
     def _send(self, to: str, email: Email, purpose: str) -> None:
         try:
