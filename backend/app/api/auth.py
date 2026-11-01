@@ -128,14 +128,18 @@ def registration_notice_limit(user_id: object) -> rate_limit.Limit:
     )
 
 
-def _notice_is_due(db: DbSession, holder: auth_service.AddressHolder) -> bool:
+def _notice_is_due(
+    db: DbSession, holder: auth_service.AddressHolder, *, email: str, client: str
+) -> bool:
     """Counted for a deactivated holder too: the same work for every holder."""
     try:
         rate_limit.count(db, registration_notice_limit(holder.id))
     except rate_limit.RateLimitedError:
         # A 429 here would say that the address is taken.
         return False
-    return holder.is_active
+    return holder.is_active and auth_service.take_place_for_notice(
+        db, email=email, client=client
+    )
 
 
 @router.post(
@@ -146,6 +150,7 @@ def _notice_is_due(db: DbSession, holder: auth_service.AddressHolder) -> bool:
 )
 def register(
     data: RegisterRequest,
+    address: ClientAddress,
     db: DbSession,
     email_sender: EmailSenderDep,
     background_tasks: BackgroundTasks,
@@ -156,6 +161,7 @@ def register(
         email=data.email,
         password=data.password.get_secret_value(),
         display_name=data.display_name,
+        client=address,
     )
     # After the response, so its timing doesn't reveal which of the two it was.
     if registration.raw_token is not None:
@@ -164,7 +170,9 @@ def register(
             to=data.email,
             url=email_verification_url(registration.raw_token),
         )
-    elif registration.holder is not None and _notice_is_due(db, registration.holder):
+    elif registration.holder is not None and _notice_is_due(
+        db, registration.holder, email=data.email, client=address
+    ):
         background_tasks.add_task(email_sender.send_registration_notice, to=data.email)
     # Same answer whether or not the address is taken or a notice was just sent.
     return MessageResponse(
@@ -237,11 +245,12 @@ def verify_email(data: VerifyEmailRequest, db: DbSession) -> MessageResponse:
 )
 def resend_verification(
     data: ResendVerificationRequest,
+    address: ClientAddress,
     db: DbSession,
     email_sender: EmailSenderDep,
     background_tasks: BackgroundTasks,
 ) -> MessageResponse:
-    raw_token = auth_service.request_email_verification(db, data.email)
+    raw_token = auth_service.request_email_verification(db, data.email, client=address)
     if raw_token is not None:
         # After the response, so its timing doesn't reveal that an account was found.
         background_tasks.add_task(
@@ -266,11 +275,12 @@ def resend_verification(
 )
 def forgot_password(
     data: ForgotPasswordRequest,
+    address: ClientAddress,
     db: DbSession,
     email_sender: EmailSenderDep,
     background_tasks: BackgroundTasks,
 ) -> MessageResponse:
-    raw_token = auth_service.request_password_reset(db, data.email)
+    raw_token = auth_service.request_password_reset(db, data.email, client=address)
     if raw_token is not None:
         # After the response, so its timing doesn't reveal that an account was found.
         background_tasks.add_task(

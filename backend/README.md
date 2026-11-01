@@ -17,7 +17,7 @@ uvicorn app.main:app --reload
 The schema is defined by the SQLAlchemy models in `app/models/` and managed
 with Alembic. It currently consists of `users`, `posts`, `likes`, `reposts`,
 `follows`, `stories`, `story_views`, `sessions`, `email_verification_tokens`,
-`password_reset_tokens` and `rate_limits`.
+`password_reset_tokens`, `rate_limits` and `queued_emails`.
 
 ```bash
 alembic upgrade head                              # apply migrations
@@ -88,6 +88,8 @@ defined.
 | `RATE_LIMIT_SECRET` | development only | Key of the hashes that rate-limit counters are stored under |
 | `RESEND_API_KEY` | required in production | Key of the [Resend](#email) API, through which account email is sent. A secret, like `RATE_LIMIT_SECRET` |
 | `EMAIL_FROM` | required in production | Sender of account email, e.g. `Hopsnop <no-reply@hopsnop.com>`, at a domain verified with Resend |
+| `EMAILS_PER_DAY` | `80` | Emails across the whole site in any 24 hours, see [rate limiting](#rate-limiting). Keep it under what the email plan allows; a paid plan just raises it |
+| `EMAILS_PER_ADDRESS_AND_IP_PER_DAY` | `5` | Emails to one address from one client in any 24 hours |
 | `SESSION_COOKIE_NAME` | `hopsnop_session` | Name of the session cookie, before its `__Host-` prefix |
 | `SESSION_COOKIE_SAMESITE` | `lax` | `lax` or `strict`; `none` is not accepted |
 | `SESSION_LIFETIME_DAYS` | `30` | How long a session lasts after login |
@@ -252,6 +254,7 @@ all of it or none of it:
 | Stories, expired ones included, and who viewed them | Removed |
 | Views the account made of others' stories | Removed |
 | Rate-limit counters under its username, its email and its id (wrong passwords, exports, uploads, registration notices) | Removed |
+| Records of the [emails queued](#rate-limiting) to its address | Both keyed hashes blanked. A time with nothing attached stays for up to 24 hours, because that email still counts toward the day's total |
 
 What is left is the tombstones, and only where somebody else's reply needs
 one to stay in its thread. A tombstone holds an id, the id of the post it
@@ -280,7 +283,8 @@ password (Argon2, with no lock held), and then, in one transaction:
 5. removes the account's stories (their views go with them);
 6. removes the account's row; the foreign keys remove its sessions, tokens,
    follows, likes, reposts and story views;
-7. commits.
+7. blanks the keyed hashes on the records of emails queued to its address;
+8. commits.
 
 Then the files of the account's pictures are removed, the counters kept
 under the account's names are removed and the cookie is cleared. If removing
@@ -351,8 +355,10 @@ an index that was already there.
 keyed by an address alone, or by the account's name together with an address
 other than the one the deletion came from, cannot be found from the account
 and stay until the [retention purge](#retention) removes them, once their
-window is over. They hold a keyed hash and a number, no name and no address. Database backups, the write-ahead log and server logs are
-outside the application.
+window is over. They hold a keyed hash and a number, no name and no address.
+A registration notice queued at the moment of the deletion can leave one record
+with its keyed hashes, for up to 24 hours. Database backups, the write-ahead log
+and server logs are outside the application.
 
 ### Account enumeration
 
@@ -386,6 +392,11 @@ unverified account, which `GET /users/{username}` does not show (`404`).
 Closing both would take an account that does not exist until its address is
 verified, which is not how registration works here.
 
+The [daily total of emails](#rate-limiting) is shared, which tells a little too:
+someone who fills it to the last place and watches their own mailbox can tell
+whether a request for another address took that place. That is slower and
+noisier than the login check above.
+
 The same body is not enough if the time differs. Sending an email takes the
 provider hundreds of milliseconds, so done within the request it would make
 `forgot-password` and `resend-verification` measurably slower for an address
@@ -396,12 +407,22 @@ link, which the response does include.
 
 Registration sends its email after the response too, and hashes the password
 whether or not the address is taken, as that is most of its time. Both cases
-make the same two reads and, after the hash, one commit; a new account takes two
-statements more than a notice. Measured through a real server on a development
-machine, 60 requests each: a median of 48.1 ms for a new account and 46.5 ms for
-a taken address, with about 5 ms between the 10th and 90th percentile of each. A
-taken username is answered in 6.8 ms, as nothing is hashed, which says nothing
-about the email address.
+make the same four reads; a new account takes two statements more, and a taken
+address one commit more. Measured through a real server on a development machine,
+60 requests each, as a median and the 10th to 90th percentile: 58.2 ms (48.5 to
+67.1) for a new account and 55.3 ms (46.8 to 64.2) for a taken address. A taken
+username is answered in 5.8 ms, as nothing is hashed, which says nothing about the
+email address.
+
+The [daily caps](#rate-limiting) widen the difference for `forgot-password` and
+`resend-verification`, as only a request with an email to send takes their lock,
+counts and takes a place. Measured the same way, `forgot-password` takes 5.8 ms for
+an unknown address, 6.2 ms inside the cooldown, 10.2 ms when an email is sent and
+8.1 ms when one is skipped. The gap between an unknown address and a sent email
+went from about 2.5 ms to about 4.5 ms. Under load the lock adds to it: 40 requests
+at once took a median of 184 to 207 ms, against 138 to 173 ms before, and a request
+for an unknown address does not wait. This is not evened out, as the login check
+above gives the same answer more reliably.
 
 ### Cookie and CSRF
 
@@ -437,8 +458,8 @@ same-origin requests such as those from `/docs` are rejected.
 The endpoints that check a secret, send an email or take a picture are rate
 limited. A request
 over a limit is answered with `429` and a `Retry-After` header, the same
-answer whichever limit it was; only the limit on registration notices is
-silent (see below). The header is exposed to the frontend
+answer whichever limit it was; only the limits on emails sent are silent (see
+below). The header is exposed to the frontend
 (`Access-Control-Expose-Headers`), so its scripts can read it.
 
 | Endpoint | Counted | Per | Setting | Default |
@@ -451,6 +472,8 @@ silent (see below). The header is exposed to the frontend
 | `POST /auth/register` | requests | address | `REGISTRATIONS_PER_IP` | 5 |
 | | notices to a taken address, silently | account | `REGISTRATION_NOTICES_PER_ACCOUNT` | 1 |
 | `POST /auth/forgot-password`, `/auth/resend-verification` | requests | address | `EMAIL_REQUESTS_PER_IP` | 5 each |
+| All three, in any 24 hours | emails, silently | email address and client address | `EMAILS_PER_ADDRESS_AND_IP_PER_DAY` | 5 |
+| | emails, silently | the whole site | `EMAILS_PER_DAY` | 80 |
 | `POST /auth/verify-email`, `/auth/reset-password` | requests | address | `TOKEN_REDEMPTIONS_PER_IP` | 10 each |
 | `PUT /users/me/avatar`, `POST /stories` | uploads | account | `IMAGE_UPLOADS_PER_ACCOUNT` | 20 together |
 
@@ -510,7 +533,53 @@ window: by default one notice per address per 15 minutes. A full counter means
 no email and the same `202`, because a `429` would say that the address is
 taken.
 
-None of these limits yet caps the total number of emails sent in a day.
+**Emails a day.** Every email takes a place in the request, before anything is
+queued, across verification, reset and notice together. The two caps are rolling,
+over any 24 hours, and silent: a skipped email leaves the answer of the route
+exactly as it was, since a `429` would say that the address has an account.
+
+- `EMAILS_PER_ADDRESS_AND_IP_PER_DAY` is per email address and client address
+  together, as the login limit is. Per email address alone, five requests from
+  anyone would stop that address's owner getting any email for a day, again and
+  again. From another client address the owner keeps a full allowance.
+- `EMAILS_PER_DAY` is for the whole site. Its default is under the 100 a day and
+  3,000 a month of [Resend's free
+  plan](https://resend.com/docs/knowledge-base/account-quotas-and-limits), and a
+  rolling count stays under it whichever way Resend counts its day.
+
+A skipped email issues no token. Issuing one would withdraw the link already in
+the mailbox and deliver nothing, and the cooldown would start for an email nobody
+got. A new account is still created, without a link, and can ask for one once
+places free up. A request inside the cooldown, or for an address with nothing to
+send, takes no place.
+
+What the caps leave open:
+
+- Several clients can each send their allowance to one address, up to the total.
+- Clients behind one shared address share an allowance. Behind a proxy that is
+  not set up as described below, that is every client.
+- The total protects the provider's quota, not real users' email. One client with
+  enough addresses can use it up in 80 minutes (5 requests per 15 minutes on each
+  of three routes, and registering supplies new addresses) and take each place as
+  it frees. While it is used up, no verification or reset email goes out for
+  anyone.
+
+The requests take turns under an advisory lock, as a statement of its own, so the
+count that follows it sees what the last holder committed: a conditional insert
+at `READ COMMITTED` could not see another's uncommitted row, and two requests
+could take the last place. The lock comes after the account's row, or a new
+account's insert, and before tokens (`app/services/erasure.py`), and is held until
+the commit. Nothing that holds it waits for it again, and no erasure takes it.
+
+The records are rows in `queued_emails`: an id, a keyed hash each of the email
+address and the client address, and `queued_at`. Queued and not sent: a send that
+fails keeps its place, so the count can run high but not over the quota. At 24
+hours a record stops counting and the [retention purge](#retention) may remove it.
+
+An email skipped for one client's cap logs a `WARNING` line. One skipped for the
+total logs an `INFO` line, which the default logging does not show, and the
+request that takes the last place logs one `WARNING`: at most one per email sent,
+none per email skipped. No line holds an address, a link or a token.
 
 **Storage.** The counters are rows in the `rate_limits` table (PostgreSQL, no
 Redis and nothing in memory), so they are shared by every worker process and
@@ -602,16 +671,18 @@ domain at Resend, not of the request, so the application cannot ensure this
 itself; whoever operates the deployment has to.
 
 **Sent after the response.** The three routes that send email (`register`,
-`resend-verification` and `forgot-password`) hand it to FastAPI's background
-tasks, which run once the response has been sent, so the time the provider
-takes does not show in the response ([Account
+`resend-verification` and `forgot-password`) first take a place under the [daily
+caps](#rate-limiting), whatever the sender is, then hand the email to FastAPI's
+background tasks, which run once the response has been sent, so the time the
+provider takes does not show in the response ([Account
 enumeration](#account-enumeration)). The token is committed before that, so
 the link works by the time the email arrives.
 
 **Failures are not raised.** A timeout, a network error or any answer outside
 `2xx` is logged in one line, with the kind of failure and the HTTP status
 only: never the key, the address, the link or what Resend answered. The
-request was answered already, and the user can ask for another link.
+request was answered already, and the user can ask for another link. The email
+keeps its place under the caps.
 
 Production does not start without `RESEND_API_KEY` and `EMAIL_FROM` (see
 [Production](#production)). In development both are optional: with both set,
@@ -1538,10 +1609,12 @@ which fails for a column that is added and not yet decided on.
 | `stories` | everything else; `media_id` as the picture itself, in the archive | `author_id`: the account itself |
 | `story_views` | `story_id` and `viewed_at` of views the account made; the number of views of each of its stories | who viewed its stories: that is the viewers' data, and is told to nobody |
 | `rate_limits` | nothing | counters under keyed hashes, attributable to no account without the server's secret; a control, not a record of the user |
+| `queued_emails` | nothing | kept for 24 hours under keyed hashes, attributable to no account without the server's secret; a control, not a record of the user |
 
 **Never in an export:** the password or its hash, session tokens or their
 hashes, session ids, the hashes or ids of emailed links, the keys of
-rate-limit counters, `RATE_LIMIT_SECRET`, or any other secret. None of these
+rate-limit counters, the hashes of queued emails, `RATE_LIMIT_SECRET`, or any
+other secret. None of these
 is read by any statement of the export, and none has a field in the schema.
 The tests search the whole document for every such value in the database,
 whoever's it is.
@@ -1632,7 +1705,7 @@ writing the document out in pieces. No index was added.
 
 Much of what is stored stops being used without being removed: a story
 expires, a session ends, a link is opened or runs out, a rate-limit window is
-over, somebody registers and never opens the link, a picture file is left
+over, a queued email stops counting, somebody registers and never opens the link, a picture file is left
 behind by an upload that failed. The retention purge removes such rows and
 files once they have been of no use for a configured time. It is
 a command, run by hand or by cron. The application never runs it, and there
@@ -1684,6 +1757,7 @@ Retention purge at 2026-10-13T03:15:00+00:00
   ended sessions kept           30 days
   spent tokens kept             7 days
   finished counters kept        1 hours
+  queued emails kept            24 hours
   unreferenced pictures kept    1 hours
   unverified accounts           not removed (PURGE_UNVERIFIED_ACCOUNTS is off)
   batch size                    1000
@@ -1694,8 +1768,9 @@ Removed:
   email verification tokens           31
   password reset tokens                6
   rate limit counters               1204
+  queued emails                       63
   orphaned pictures                    2
-  total                             1718
+  total                             1781
 ```
 
 A dry run prints `Would remove:` in place of `Removed:`, with the rows that
@@ -1776,6 +1851,7 @@ A row is removed when that moment is the period ago or longer.
 | Sessions | `expires_at` or `revoked_at`, whichever is earlier | days | `ENDED_SESSION_RETENTION_DAYS` | `30` |
 | Verification and reset tokens | `expires_at` or `used_at`, whichever is earlier | days | `SPENT_TOKEN_RETENTION_DAYS` | `7` |
 | Rate-limit counters | the end of their window, `window_start` + `RATE_LIMIT_WINDOW_MINUTES` | hours | `RATE_LIMIT_RETENTION_HOURS` | `1` |
+| Records of queued emails, blanked or not | when they stop counting, `queued_at` + 24 hours | not at all | none: fixed, so cron has nothing to match | |
 | Accounts that were never verified, **only if `PURGE_UNVERIFIED_ACCOUNTS` is `true`** | `created_at`, see below | days | `UNVERIFIED_ACCOUNT_RETENTION_DAYS` | `7`, and off |
 | Picture files that no row names | when the file was last written | hours | `ORPHANED_IMAGE_RETENTION_HOURS` | `1` (at least `1`) |
 
@@ -1824,7 +1900,7 @@ removed once it is `UNVERIFIED_ACCOUNT_RETENTION_DAYS` old, the ones made in
 good faith included, and an account that an operator meant to verify by hand
 would be gone before they got to it. Switch it on only where verification
 emails are delivered, and after a dry run has shown how many accounts it
-would take. Setting the period alone does not switch it on. The other four
+would take. Setting the period alone does not switch it on. The other five
 kinds of rows are removed either way.
 
 Such an account cannot be signed in to, so nothing was ever written in its
@@ -1845,7 +1921,9 @@ It is removed the way its user would remove it, by the same code as
 [deleting an account](#deleting-an-account), and its username and address
 can be registered again from that moment. A link that was sent to it opens
 nothing afterwards (`400`). Counters of failed logins under its names are
-not looked for; they are gone when their window is.
+not looked for; they are gone when their window is. Nor are records of emails
+queued to its address blanked, which would need `RATE_LIMIT_SECRET`; they are gone
+within 24 hours.
 
 ### Running it
 
@@ -1991,9 +2069,9 @@ to backups and logs.
 | [Data export](#data-export): everything of an account's own, complete, machine-readable, on request and behind the password | Right of access (Art. 15), right to data portability (Art. 20) |
 | [Post deletion](#deletion) and [account deletion](#deleting-an-account): real removal, at once, with nothing kept to restore from; what stays of a thread holds no author and no text | Right to erasure (Art. 17) |
 | [Pictures](#pictures) are redrawn from their pixels alone: the location, camera and time a phone writes into a photo are never stored. They are served by the API itself and never fetched from another host, so no third party sees who views them | Data minimisation (Art. 5(1)(c)), data protection by design (Art. 25) |
-| No address and no user agent is stored; tokens only as hashes; rate-limit keys only as keyed hashes; an export leaves out what is not the user's | Data minimisation (Art. 5(1)(c)) |
+| No address and no user agent is stored; tokens only as hashes; rate-limit keys and the records of queued emails only as keyed hashes; an export leaves out what is not the user's | Data minimisation (Art. 5(1)(c)) |
 | Password hashing, session handling, rate limiting, and the password asked again before data is handed out or removed | Security of processing (Art. 32) |
-| [Retention purge](#retention): expired stories, ended sessions, spent links, finished rate-limit windows and unreferenced picture files are removed after a configured time, and accounts that were never verified where that is switched on | Storage limitation (Art. 5(1)(e)) |
+| [Retention purge](#retention): expired stories, ended sessions, spent links, finished rate-limit windows and unreferenced picture files are removed after a configured time, records of queued emails after 24 hours, and accounts that were never verified where that is switched on | Storage limitation (Art. 5(1)(e)) |
 
 The retention purge needs to be run to do anything: the application does not
 start it. Its periods are engineering defaults that an operator sets, not
@@ -2040,7 +2118,8 @@ again, and a run that left rows behind is failed.
 
 Each test runs in a transaction that is rolled back, so nothing is committed.
 The exception is the tests of what happens when requests arrive together
-(the last part of `test_rate_limiting.py`, `test_auth_concurrency.py`,
+(the last part of `test_rate_limiting.py` and of `test_email_caps.py`,
+`test_auth_concurrency.py`,
 `test_post_erasure_concurrency.py`, `test_account_deletion_concurrency.py`,
 `test_data_export_concurrency.py`, `test_retention_concurrency.py`, and some
 of `test_lifecycle_foundations.py`). They need real transactions:

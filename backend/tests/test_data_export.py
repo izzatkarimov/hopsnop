@@ -886,6 +886,11 @@ _limiter = Excluded(
     "A counter of the rate limiter. Kept under a keyed hash, attributable to no "
     "account without the server's secret, and a control, not a record of the user.",
 )
+_email_cap = Excluded(
+    NOT_USER_DATA,
+    "What the daily email caps count. Kept for 24 hours under keyed hashes, attributable "
+    "to no account without the server's secret, and a control, not a record of the user.",
+)
 
 MATRIX: dict[str, Exported | Excluded] = {
     "users.id": Exported("account.id"),
@@ -972,6 +977,10 @@ MATRIX: dict[str, Exported | Excluded] = {
     "rate_limits.key_hash": _limiter,
     "rate_limits.window_start": _limiter,
     "rate_limits.count": _limiter,
+    "queued_emails.id": _email_cap,
+    "queued_emails.address_hash": _email_cap,
+    "queued_emails.client_hash": _email_cap,
+    "queued_emails.queued_at": _email_cap,
 }
 
 DERIVED = {
@@ -1026,7 +1035,7 @@ def test_every_table_that_holds_something_of_an_account_has_a_part_in_the_export
         if any(key.column.table.name == "users" for key in column.foreign_keys)
     }
     assert exported == referring | {"users"}
-    assert set(Base.metadata.tables) - exported == {"rate_limits"}
+    assert set(Base.metadata.tables) - exported == {"queued_emails", "rate_limits"}
 
 
 def test_document_holds_what_the_matrix_says_and_nothing_besides(

@@ -59,6 +59,10 @@ class Settings(BaseSettings):
     registrations_per_ip: int = Field(default=5, gt=0)
     # Emails to the owner of a taken address; past this, nothing is sent or shown.
     registration_notices_per_account: int = Field(default=1, gt=0)
+    # Silent, in any 24 hours: per address and client, so one IP can't block an owner.
+    emails_per_address_and_ip_per_day: int = Field(default=5, gt=0)
+    # Silent, in any 24 hours: keep it under what the email provider's plan allows.
+    emails_per_day: int = Field(default=80, gt=0)
     # For /auth/forgot-password and /auth/resend-verification, each.
     email_requests_per_ip: int = Field(default=5, gt=0)
     # For /auth/verify-email and /auth/reset-password, each.

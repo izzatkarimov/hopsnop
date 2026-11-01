@@ -1404,7 +1404,7 @@ def test_concurrent_resend_requests_leave_the_link_already_sent_alone(
         assert verified.status_code == 200
 
 
-def test_requests_for_different_accounts_do_not_wait_for_each_other(
+def test_requests_at_once_for_different_accounts_each_issue_a_link(
     committed, issued: list[str]
 ) -> None:
     accounts = [committed() for _ in range(4)]

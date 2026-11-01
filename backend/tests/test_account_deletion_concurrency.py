@@ -17,6 +17,7 @@ from app.models import (
     Like,
     PasswordResetToken,
     Post,
+    QueuedEmail,
     RateLimit,
     Repost,
     Story,
@@ -108,6 +109,14 @@ def assert_gone(
             .where(RateLimit.key_hash.in_(named))
         )
         assert not counters or left == 0
+        assert not db.scalar(
+            select(func.count())
+            .select_from(QueuedEmail)
+            .where(
+                QueuedEmail.address_hash
+                == key_hash("queued-email:address", account.email)
+            )
+        )
         for (tombstone,) in db.execute(select(Post.id).where(Post.author_id.is_(None))):
             assert db.scalar(
                 select(func.count())

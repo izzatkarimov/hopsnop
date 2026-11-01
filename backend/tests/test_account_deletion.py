@@ -19,6 +19,7 @@ from app.models import (
     Like,
     PasswordResetToken,
     Post,
+    QueuedEmail,
     RateLimit,
     Repost,
     Story,
@@ -131,6 +132,7 @@ class Traces:
     pictures: list[uuid.UUID]
     texts: list[str]
     counters: list[str]
+    address_hash: str
 
 
 def traces_of(session: Session, user: User) -> Traces:
@@ -165,12 +167,14 @@ def traces_of(session: Session, user: User) -> Traces:
         ],
         texts=[text for text in texts if text],
         counters=counters_named_after(user.id, user.username, user.email),
+        address_hash=rate_limit.key_hash("queued-email:address", user.email),
     )
 
 
 def assert_nothing_left(session: Session, traces: Traces) -> None:
     assert what_is_left_of(session, user_id=traces.user_id, texts=traces.texts) == []
     assert count(session, RateLimit, RateLimit.key_hash.in_(traces.counters)) == 0
+    assert count(session, QueuedEmail, QueuedEmail.address_hash == traces.address_hash) == 0
     assert count(session, User, User.avatar_id.in_(traces.pictures)) == 0
     assert count(session, Story, Story.media_id.in_(traces.pictures)) == 0
     assert stored_pictures().isdisjoint(traces.pictures)
@@ -373,6 +377,20 @@ def counted_failures(world: World) -> None:
     world.add(*(RateLimit(key_hash=key, window_start=now, count=3) for key in keys))
 
 
+def queued_emails(world: World) -> None:
+    now = datetime.now(timezone.utc)
+    world.add(
+        *(
+            QueuedEmail(
+                address_hash=rate_limit.key_hash("queued-email:address", user.email),
+                client_hash=rate_limit.key_hash("queued-email:client", ADDRESS),
+                queued_at=now,
+            )
+            for user in (world.alice, world.alice, world.bob)
+        )
+    )
+
+
 def everything(world: World) -> None:
     for kind in KINDS[:-1]:
         kind(world)
@@ -390,6 +408,7 @@ KINDS = [
     several_sessions,
     outstanding_links,
     counted_failures,
+    queued_emails,
     everything,
 ]
 
@@ -1458,6 +1477,7 @@ def test_everything_is_locked_and_removed_in_the_one_order(
         statements.first("DELETE FROM posts"),
         statements.first("DELETE FROM stories"),
         statements.first("DELETE FROM users"),
+        statements.first("UPDATE queued_emails SET"),
         statements.first("DELETE FROM rate_limits"),
     ]
     assert in_order == sorted(in_order)

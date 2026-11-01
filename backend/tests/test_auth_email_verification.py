@@ -289,6 +289,6 @@ def test_service_reports_whether_there_is_something_to_send(session: Session) ->
 
     request = auth_service.request_email_verification
 
-    assert request(session, "alice@example.com")
-    assert request(session, "bob@example.com") is None
-    assert request(session, "nobody@example.com") is None
+    assert request(session, "alice@example.com", client="192.0.2.1")
+    assert request(session, "bob@example.com", client="192.0.2.1") is None
+    assert request(session, "nobody@example.com", client="192.0.2.1") is None

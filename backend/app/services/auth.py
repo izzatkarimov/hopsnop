@@ -20,7 +20,7 @@ from app.core.security import (
     verify_password,
 )
 from app.models import EmailVerificationToken, PasswordResetToken, User, UserSession
-from app.services import erasure
+from app.services import email_caps, erasure
 
 
 class AuthError(Exception):
@@ -88,6 +88,7 @@ def register_user(
     email: str,
     password: str,
     display_name: str,
+    client: str,
 ) -> Registration:
     """A taken address creates nothing; the caller must respond identically."""
     if _username_is_taken(db, username):
@@ -120,6 +121,10 @@ def register_user(
             return Registration(holder=_address_holder(db, email))
         raise
 
+    # After the insert, which can wait on another's: the caps' lock isn't held for that.
+    if not _place_taken(db, email, client):
+        # The account stands; a link can be asked for once places free up.
+        return Registration()
     raw_token = _issue_token(
         db,
         EmailVerificationToken,
@@ -128,6 +133,22 @@ def register_user(
     )
     db.commit()
     return Registration(raw_token=raw_token)
+
+
+def _place_taken(db: Session, email: str, client: str) -> bool:
+    """Before any token: issuing withdraws the link in the mailbox. A skip commits."""
+    if email_caps.take_place(db, email=email, client=client):
+        return True
+    # Else the caps' lock would be held until the response has gone out.
+    db.commit()
+    return False
+
+
+def take_place_for_notice(db: Session, *, email: str, client: str) -> bool:
+    """Commits either way, which gives the caps' lock back."""
+    taken = email_caps.take_place(db, email=email, client=client)
+    db.commit()
+    return taken
 
 
 def _username_is_taken(db: Session, username: str) -> bool:
@@ -287,12 +308,14 @@ def verify_email(db: Session, raw_token: str) -> None:
     db.commit()
 
 
-def request_email_verification(db: Session, email: str) -> str | None:
+def request_email_verification(db: Session, email: str, *, client: str) -> str | None:
     """None if there's nothing to send; the caller must respond identically."""
     user = db.scalar(_for_issuing_a_token(email))
     if user is None or not user.is_active or user.email_verified_at is not None:
         return None
     if _issued_recently(db, EmailVerificationToken, user):
+        return None
+    if not _place_taken(db, email, client):
         return None
     raw_token = _issue_token(
         db,
@@ -304,12 +327,14 @@ def request_email_verification(db: Session, email: str) -> str | None:
     return raw_token
 
 
-def request_password_reset(db: Session, email: str) -> str | None:
+def request_password_reset(db: Session, email: str, *, client: str) -> str | None:
     """None if there's nothing to send; the caller must respond identically."""
     user = db.scalar(_for_issuing_a_token(email))
     if user is None or not user.is_active:
         return None
     if _issued_recently(db, PasswordResetToken, user):
+        return None
+    if not _place_taken(db, email, client):
         return None
     raw_token = _issue_token(
         db,
@@ -384,7 +409,9 @@ def delete_account(db: Session, current: UserSession, *, password: str) -> None:
     user = account_of(current)
     verified_hash = _check_current_password(user, password)
     _lock_account_if_unchanged(db, user, verified_hash, exclusive=True)
+    email = user.email
     pictures = erasure.erase_account(db, user.id, _now())
+    email_caps.forget_address(db, email)
     db.commit()
     # Now that no row names them.
     image_store().delete(pictures)

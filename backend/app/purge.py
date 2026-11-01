@@ -9,7 +9,7 @@ from sqlalchemy import func, select
 
 from app.core.config import settings
 from app.db.session import SessionLocal, engine
-from app.services import retention
+from app.services import email_caps, retention
 
 _WIDTH = 30
 _DEFAULT_PORT = 5432
@@ -39,6 +39,7 @@ def _print_settings(database: str) -> None:
     _line("ended sessions kept", f"{settings.ended_session_retention_days} days")
     _line("spent tokens kept", f"{settings.spent_token_retention_days} days")
     _line("finished counters kept", f"{settings.rate_limit_retention_hours} hours")
+    _line("queued emails kept", f"{email_caps.WINDOW_HOURS} hours")
     _line(
         "unreferenced pictures kept",
         f"{settings.orphaned_image_retention_hours} hours",

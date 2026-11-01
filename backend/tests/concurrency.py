@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session, aliased
 
 from app.db.session import SessionLocal
 from app.main import app
-from app.models import Post, RateLimit, Story, User, UserSession
+from app.models import Post, QueuedEmail, RateLimit, Story, User, UserSession
 from app.services.rate_limit import key_hash
 from helpers import PASSWORD_HASH, log_in
 
@@ -126,6 +126,8 @@ def remove_accounts(accounts: Iterable[Account]) -> None:
     reply = aliased(Post)
     with SessionLocal() as db:
         db.execute(delete(RateLimit).where(RateLimit.key_hash.in_(keys)))
+        # All of them: a blanked row has no key to find it by, and only this test runs.
+        db.execute(delete(QueuedEmail))
         db.execute(delete(Story).where(Story.author_id.in_(ids)))
         while db.execute(
             delete(Post).where(

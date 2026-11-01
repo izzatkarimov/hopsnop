@@ -426,11 +426,12 @@ def test_new_account_and_taken_email_read_the_same_and_write_about_the_same(
     def writes(statements: list[str]) -> list[str]:
         return [s for s in statements if not s.startswith("SELECT")]
 
-    assert len(reads(taken)) == 2
+    # The username, the holder, the email lock, the caps' counts.
+    assert len(reads(taken)) == 4
     assert reads(new_account) == reads(taken)
-    # Taken: the per-IP counter, the notice's. New: that counter, account, old links, link.
-    assert len(writes(taken)) == 2
-    assert len(writes(new_account)) == 4
+    # Taken: per-IP counter, notice's, place. New: that counter, account, place, links.
+    assert len(writes(taken)) == 3
+    assert len(writes(new_account)) == 5
 
 
 @pytest.mark.parametrize(

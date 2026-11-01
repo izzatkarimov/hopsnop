@@ -19,6 +19,7 @@ from app.models import (
     Like,
     PasswordResetToken,
     Post,
+    QueuedEmail,
     RateLimit,
     Repost,
     Story,
@@ -52,6 +53,7 @@ NOTHING = {
     "email_verification_tokens": 0,
     "password_reset_tokens": 0,
     "rate_limit_counters": 0,
+    "queued_emails": 0,
     "orphaned_pictures": 0,
 }
 
@@ -180,6 +182,19 @@ def add_counter(session: Session, window_start: datetime, count: int = 3) -> str
 def a_counter(session: Session, ended: datetime) -> tuple[type, object]:
     # Its window was over at ``ended``: it began one window before.
     return RateLimit, add_counter(session, ended - settings.rate_limit_window)
+
+
+def add_queued_email(
+    session: Session, queued_at: datetime, *, blanked: bool = False
+) -> uuid.UUID:
+    row = QueuedEmail(
+        address_hash=None if blanked else key_hash("queued-email:address", "a@b.example"),
+        client_hash=None if blanked else key_hash("queued-email:client", "192.0.2.1"),
+        queued_at=queued_at,
+    )
+    session.add(row)
+    session.flush()
+    return row.id
 
 
 def add_unverified(
@@ -424,6 +439,34 @@ def test_with_no_period_a_row_is_removed_the_moment_it_ends(
     assert exists(session, *not_yet)
 
 
+def test_a_queued_email_is_kept_for_24_hours_and_no_longer(session: Session) -> None:
+    day = timedelta(hours=24)
+    at_23_hours = add_queued_email(session, NOW - timedelta(hours=23))
+    just_inside = add_queued_email(session, NOW - day + A_MOMENT)
+    at_24_hours = add_queued_email(session, NOW - day)
+    older = add_queued_email(session, NOW - day - A_MOMENT)
+
+    assert retention.pending(session, NOW).queued_emails == 2
+    assert purge(session) == removed(queued_emails=2)
+
+    for kept in (at_23_hours, just_inside):
+        assert exists(session, QueuedEmail, kept)
+    for gone in (at_24_hours, older):
+        assert not exists(session, QueuedEmail, gone)
+
+
+def test_a_blanked_queued_email_goes_after_24_hours_like_any_other(
+    session: Session,
+) -> None:
+    kept = add_queued_email(session, NOW - timedelta(hours=23), blanked=True)
+    gone = add_queued_email(session, NOW - timedelta(hours=24), blanked=True)
+
+    assert purge(session) == removed(queued_emails=1)
+
+    assert exists(session, QueuedEmail, kept)
+    assert not exists(session, QueuedEmail, gone)
+
+
 def test_a_counter_is_kept_for_its_window_and_then_for_the_period(
     session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -620,7 +663,7 @@ def test_a_link_that_was_asked_for_again_keeps_the_account_until_it_expires(
     lifetime = settings.email_verification_token_lifetime
     assert purge(session, now + lifetime - timedelta(minutes=1)) == NOTHING
     assert purge(session, now + lifetime + timedelta(minutes=1)) == removed(
-        unverified_accounts=1
+        unverified_accounts=1, queued_emails=1
     )
 
 
@@ -684,7 +727,7 @@ def test_a_purged_account_cannot_redeem_what_was_sent_to_it(
     session.execute(RateLimit.__table__.delete())
     later = datetime.now(timezone.utc) + timedelta(days=8)
 
-    assert purge(session, later) == removed(unverified_accounts=1)
+    assert purge(session, later) == removed(unverified_accounts=1, queued_emails=2)
 
     assert (
         client.post("/auth/verify-email", json={"token": verification}).status_code
@@ -712,7 +755,9 @@ def test_an_account_that_verifies_in_time_is_an_account_like_any_other(
     session.execute(RateLimit.__table__.delete())
     years_later = datetime.now(timezone.utc) + timedelta(days=3650)
 
-    assert purge(session, years_later) == removed(email_verification_tokens=1)
+    assert purge(session, years_later) == removed(
+        email_verification_tokens=1, queued_emails=1
+    )
     assert log_in(client).status_code == 200
 
 
@@ -821,6 +866,7 @@ def a_world(session: Session) -> dict[str, object]:
     add_session(session, alice, expires_at=NOW + timedelta(days=3))
     add_token(session, PasswordResetToken, bob, expires_at=NOW + timedelta(minutes=5))
     add_counter(session, NOW - timedelta(minutes=1))
+    add_queued_email(session, NOW - timedelta(hours=23))
     session.flush()
     kept = snapshot(session)
 
@@ -847,6 +893,7 @@ def a_world(session: Session) -> dict[str, object]:
         used_at=LONG_AGO + A_MOMENT,
     )
     add_counter(session, LONG_AGO)
+    add_queued_email(session, LONG_AGO)
     add_unverified(session, "ghost", LONG_AGO)
     session.flush()
     return kept
@@ -869,6 +916,7 @@ EVERYTHING_OF_NO_USE = {
     "email_verification_tokens": 1,
     "password_reset_tokens": 1,
     "rate_limit_counters": 1,
+    "queued_emails": 1,
     "orphaned_pictures": 0,
 }
 
@@ -975,7 +1023,7 @@ def test_a_second_run_removes_nothing_more(session: Session) -> None:
     kept = a_world(session)
 
     first = retention.purge(session, NOW)
-    assert first.total == 7
+    assert first.total == 8
     assert first.as_dict() == EVERYTHING_OF_NO_USE
 
     for _ in range(3):
@@ -1090,7 +1138,10 @@ def test_a_failure_keeps_what_was_done_and_says_how_far_it_got(
 
     failing.stop()
     assert purge(session) == removed(
-        email_verification_tokens=1, password_reset_tokens=1, rate_limit_counters=1
+        email_verification_tokens=1,
+        password_reset_tokens=1,
+        rate_limit_counters=1,
+        queued_emails=1,
     )
     assert snapshot(session) == kept
 
@@ -1197,7 +1248,7 @@ def command(
 
 
 def counts_in(output: str, heading: str) -> dict[str, int]:
-    lines = output[output.index(heading) :].splitlines()[1:9]
+    lines = output[output.index(heading) :].splitlines()[1:10]
     return {
         " ".join(words[:-1]): int(words[-1]) for words in map(str.split, lines)
     }
@@ -1229,6 +1280,7 @@ def test_command_removes_nothing_unless_told_to(
         "email verification tokens": 0,
         "password reset tokens": 0,
         "rate limit counters": 1,
+        "queued emails": 0,
         "orphaned pictures": 0,
         "total": 5,
     }
@@ -1238,6 +1290,20 @@ def test_command_removes_nothing_unless_told_to(
         in out.out
     )
     assert out.err == ""
+
+
+def test_a_dry_run_reports_queued_emails_past_the_caps_and_removes_none(
+    session: Session, command, capsys: pytest.CaptureFixture[str]
+) -> None:
+    add_queued_email(session, LONG_AGO)
+    add_queued_email(session, LONG_AGO, blanked=True)
+
+    assert command([]) == 0
+
+    out = capsys.readouterr().out
+    assert counts_in(out, "Would remove:")["queued emails"] == 2
+    assert counts_in(out, "Would remove:")["total"] == 2
+    assert count(session, QueuedEmail) == 2
 
 
 def test_command_told_to_removes_and_reports(
@@ -1412,6 +1478,7 @@ def test_command_says_what_it_runs_with(
         "ended sessions kept           11 days",
         "spent tokens kept             7 days",
         "finished counters kept        1 hours",
+        "queued emails kept            24 hours",
         "unreferenced pictures kept    1 hours",
         "batch size                    1000",
     ):

@@ -893,12 +893,16 @@ def test_limits_are_settings_with_defaults_and_cannot_be_switched_off(
         > configured.login_failures_per_identifier_and_ip
     )
     assert configured.rate_limit_window.total_seconds() == 15 * 60
+    assert configured.emails_per_address_and_ip_per_day == 5
+    assert configured.emails_per_day == 80
     for name in (
         "login_failures_per_identifier_and_ip",
         "login_failures_per_identifier",
         "login_failures_per_ip",
         "registrations_per_ip",
         "registration_notices_per_account",
+        "emails_per_address_and_ip_per_day",
+        "emails_per_day",
         "email_requests_per_ip",
         "token_redemptions_per_ip",
         "password_confirmation_failures",

@@ -13,12 +13,13 @@ from app.models import (
     EmailVerificationToken,
     PasswordResetToken,
     Post,
+    QueuedEmail,
     RateLimit,
     Story,
     User,
     UserSession,
 )
-from app.services import erasure
+from app.services import email_caps, erasure
 
 _Conditions = tuple[ColumnElement[bool], ...]
 
@@ -31,6 +32,7 @@ class Report:
     email_verification_tokens: int = 0
     password_reset_tokens: int = 0
     rate_limit_counters: int = 0
+    queued_emails: int = 0
     orphaned_pictures: int = 0
 
     @property
@@ -75,6 +77,10 @@ def _finished_counters(now: datetime) -> _Conditions:
     return (
         RateLimit.window_start <= window_over_since - settings.rate_limit_retention,
     )
+
+
+def _queued_emails_past_the_caps(now: datetime) -> _Conditions:
+    return (QueuedEmail.queued_at <= now - email_caps.WINDOW,)
 
 
 def _abandoned(now: datetime) -> _Conditions:
@@ -216,6 +222,12 @@ def _rows_of_no_use(now: datetime) -> dict[str, _Rows]:
         "rate_limit_counters": (
             RateLimit.key_hash,
             _finished_counters(now),
+            False,
+            None,
+        ),
+        "queued_emails": (
+            QueuedEmail.id,
+            _queued_emails_past_the_caps(now),
             False,
             None,
         ),
