@@ -652,7 +652,7 @@ def test_no_follow_response_contains_a_secret(
         "/auth/register",
         json=registration(username="carol", email="carol@example.com"),
     )
-    assert registered.status_code == 201
+    assert registered.status_code == 202
     anonymous.post("/auth/forgot-password", json={"email": "alice@example.com"})
     verification_token = token_from(outbox.verification[0][1])
     reset_token = token_from(outbox.password_reset[0][1])

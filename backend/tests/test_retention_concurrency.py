@@ -582,10 +582,10 @@ def test_name_of_an_account_being_purged_is_free_once_that_is_committed(
     )
 
     assert report.unverified_accounts == 1
-    assert registered.status_code in (201, 409)
-    assert waited == (registered.status_code == 201)
+    assert registered.status_code in (202, 409)
+    assert waited == (registered.status_code == 202)
     assert not there(User, ghost.id)
-    assert ghost.client(2).post("/auth/register", json=again).status_code in (201, 409)
+    assert ghost.client(2).post("/auth/register", json=again).status_code in (202, 409)
     assert rows(User, User.username == ghost.name) == 1
 
 

@@ -35,6 +35,7 @@ ACCOUNT_SCOPES = (
     "password-confirmation:account",
     "data-export:account",
     "image-upload:account",
+    "registration-notice:account",
 )
 
 _Result = TypeVar("_Result")

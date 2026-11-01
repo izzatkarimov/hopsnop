@@ -1,40 +1,110 @@
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from datetime import datetime, timezone
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import func, select
+from httpx import Response
+from sqlalchemy import event, func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.security import hash_token, verify_password
-from app.models import EmailVerificationToken, User, UserSession
+from app.db.session import engine
+from app.models import EmailVerificationToken, PasswordResetToken, User, UserSession
 from app.services import auth as auth_service
 from helpers import (
     PASSWORD,
     SENSITIVE_KEYS,
     add_user,
+    columns,
     keys_in,
+    let_cooldown_pass,
+    recorded_selects,
     registration,
     token_from,
 )
+
+ACCEPTED = {
+    "message": (
+        "If that email address can be used for a new account, a verification "
+        "email has been sent."
+    )
+}
+HOLDERS = {
+    "verified": {"verified": True},
+    "unverified": {"verified": False},
+    "deactivated": {"active": False},
+}
+NEW_ACCOUNT = registration(username="carol", email="carol@example.com")
+TAKEN_EMAIL = registration(username="another", email="alice@example.com")
 
 
 def count(session: Session, model: type) -> int:
     return session.scalar(select(func.count()).select_from(model))
 
 
+def whole_answer(response: Response) -> tuple:
+    return response.status_code, response.text, dict(response.headers)
+
+
+@pytest.fixture
+def hashed(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    passwords: list[str] = []
+    real = auth_service.hash_password
+
+    def recording(password: str) -> str:
+        passwords.append(password)
+        return real(password)
+
+    monkeypatch.setattr(auth_service, "hash_password", recording)
+    return passwords
+
+
+def first_answering(real: Callable, first: object) -> Callable:
+    pending = [first]
+
+    def answer(*args: object) -> object:
+        return pending.pop() if pending else real(*args)
+
+    return answer
+
+
+@pytest.fixture
+def race_lost(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The checks before the insert find nothing; only a constraint notices."""
+    for function, nothing in (("_username_is_taken", False), ("_address_holder", None)):
+        real = getattr(auth_service, function)
+        monkeypatch.setattr(auth_service, function, first_answering(real, nothing))
+
+
+@contextmanager
+def recorded_statements() -> Iterator[list[str]]:
+    statements: list[str] = []
+
+    def record(conn, cursor, statement, parameters, context, executemany) -> None:
+        # Savepoints belong to the test's transaction, not to the request.
+        if "SAVEPOINT" not in statement:
+            statements.append(" ".join(statement.split()))
+
+    event.listen(engine, "before_cursor_execute", record)
+    try:
+        yield statements
+    finally:
+        event.remove(engine, "before_cursor_execute", record)
+
+
 def test_valid_registration_succeeds(client: TestClient, session: Session) -> None:
     response = client.post("/auth/register", json=registration())
 
-    assert response.status_code == 201
-    body = response.json()
-    assert body["username"] == "alice"
-    assert body["email"] == "alice@example.com"
-    assert body["display_name"] == "Alice"
-    assert body["is_active"] is True
+    assert response.status_code == 202
+    assert response.json() == ACCEPTED
 
     user = session.scalars(select(User)).one()
-    assert str(user.id) == body["id"]
+    assert user.username == "alice"
+    assert user.email == "alice@example.com"
+    assert user.display_name == "Alice"
+    assert user.is_active is True
 
 
 def test_password_is_stored_only_as_an_argon2id_hash(
@@ -65,8 +135,7 @@ def test_username_is_normalized_to_lowercase(
 ) -> None:
     response = client.post("/auth/register", json=registration(username="  Alice_01 "))
 
-    assert response.status_code == 201
-    assert response.json()["username"] == "alice_01"
+    assert response.status_code == 202
     assert session.scalars(select(User.username)).one() == "alice_01"
 
 
@@ -75,25 +144,23 @@ def test_email_is_normalized_to_lowercase(client: TestClient, session: Session) 
         "/auth/register", json=registration(email="  Alice.Smith@Example.COM ")
     )
 
-    assert response.status_code == 201
-    assert response.json()["email"] == "alice.smith@example.com"
+    assert response.status_code == 202
     assert session.scalars(select(User.email)).one() == "alice.smith@example.com"
 
 
-def test_display_name_is_trimmed_but_otherwise_kept(client: TestClient) -> None:
-    response = client.post(
-        "/auth/register", json=registration(display_name="  Alice Smith  ")
-    )
+def test_display_name_is_trimmed_but_otherwise_kept(
+    client: TestClient, session: Session
+) -> None:
+    client.post("/auth/register", json=registration(display_name="  Alice Smith  "))
 
-    assert response.json()["display_name"] == "Alice Smith"
+    assert session.scalars(select(User.display_name)).one() == "Alice Smith"
 
 
 def test_registration_creates_an_unverified_account(
     client: TestClient, session: Session
 ) -> None:
-    response = client.post("/auth/register", json=registration())
+    client.post("/auth/register", json=registration())
 
-    assert response.json()["email_verified_at"] is None
     assert session.scalars(select(User)).one().email_verified_at is None
 
 
@@ -139,6 +206,13 @@ def test_registration_response_contains_no_secrets(client: TestClient, outbox) -
     assert token_from(outbox.verification[0][1]) not in response.text
 
 
+def test_registration_response_holds_no_account_data(client: TestClient) -> None:
+    response = client.post("/auth/register", json=registration())
+
+    assert set(response.json()) == {"message"}
+    assert "alice" not in response.text
+
+
 @pytest.mark.parametrize("username", ["alice", "ALICE", " Alice "])
 def test_duplicate_username_is_rejected(
     client: TestClient, session: Session, username: str
@@ -155,50 +229,208 @@ def test_duplicate_username_is_rejected(
     assert count(session, User) == 1
 
 
-@pytest.mark.parametrize("email", ["alice@example.com", "Alice@Example.com"])
-def test_duplicate_email_is_rejected(
-    client: TestClient, session: Session, email: str
+@pytest.mark.parametrize(
+    "email", ["free@example.com", "bob@example.com"], ids=["free email", "taken email"]
+)
+def test_taken_username_is_refused_alike_whether_or_not_the_email_is_taken(
+    client: TestClient, session: Session, outbox, hashed: list[str], email: str
 ) -> None:
     add_user(session, "alice")
+    add_user(session, "bob")
+
+    with recorded_selects() as reads:
+        response = client.post("/auth/register", json=registration(email=email))
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": "Username already in use."}
+    assert count(session, User) == 2
+    assert hashed == []
+    assert outbox.registration_notice == []
+    [read] = reads
+    assert "users.username" in read
+    assert "users.email" not in read
+
+
+@pytest.mark.parametrize("holder", HOLDERS)
+def test_taken_email_is_answered_exactly_like_a_new_account(
+    client: TestClient, session: Session, holder: str
+) -> None:
+    add_user(session, "alice", **HOLDERS[holder])
+
+    new_account = client.post("/auth/register", json=NEW_ACCOUNT)
+    taken = client.post("/auth/register", json=TAKEN_EMAIL)
+
+    assert new_account.status_code == 202
+    assert new_account.json() == ACCEPTED
+    assert new_account.headers["cache-control"] == "no-store"
+    assert "set-cookie" not in new_account.headers
+    assert whole_answer(taken) == whole_answer(new_account)
+
+
+@pytest.mark.parametrize("email", ["alice@example.com", "Alice@Example.com"])
+def test_taken_email_creates_nothing_and_changes_nothing(
+    client: TestClient, session: Session, email: str
+) -> None:
+    alice = add_user(session, "alice")
+    before = columns(session, alice)
 
     response = client.post(
         "/auth/register",
-        json=registration(username="another", email=email),
+        json=registration(
+            username="another",
+            email=email,
+            password="an entirely different passphrase",
+            display_name="Somebody Else",
+        ),
     )
 
-    assert response.status_code == 409
-    assert response.json() == {"detail": "Email already in use."}
+    assert response.status_code == 202
     assert count(session, User) == 1
+    assert count(session, EmailVerificationToken) == 0
+    assert count(session, PasswordResetToken) == 0
+    assert count(session, UserSession) == 0
+    assert columns(session, alice) == before
+
+
+@pytest.mark.parametrize("email", ["alice@example.com", "Alice@Example.com"])
+def test_taken_email_sends_its_owner_one_notice_and_no_link(
+    client: TestClient, session: Session, outbox, email: str
+) -> None:
+    add_user(session, "alice")
+
+    client.post("/auth/register", json=registration(username="another", email=email))
+
+    assert outbox.registration_notice == ["alice@example.com"]
+    assert outbox.verification == []
+    assert outbox.password_reset == []
+
+
+def test_unverified_holder_gets_the_notice_and_keeps_the_link_it_has(
+    client: TestClient, session: Session, outbox
+) -> None:
+    client.post("/auth/register", json=registration())
+    first_link = token_from(outbox.verification[0][1])
+    # So that only the design keeps a new link from replacing it, not the cooldown.
+    let_cooldown_pass(session)
+
+    client.post("/auth/register", json=TAKEN_EMAIL)
+
+    assert outbox.registration_notice == ["alice@example.com"]
+    assert len(outbox.verification) == 1
+    assert session.scalars(select(EmailVerificationToken.token_hash)).all() == [
+        hash_token(first_link)
+    ]
+    assert (
+        client.post("/auth/verify-email", json={"token": first_link}).status_code == 200
+    )
+
+
+def test_deactivated_holder_is_sent_nothing(
+    client: TestClient, session: Session, outbox
+) -> None:
+    add_user(session, "alice", active=False)
+
+    response = client.post("/auth/register", json=TAKEN_EMAIL)
+
+    assert response.status_code == 202
+    assert outbox.registration_notice == []
+    assert outbox.verification == []
+    assert outbox.password_reset == []
+
+
+def test_new_account_is_sent_a_link_and_no_notice(client: TestClient, outbox) -> None:
+    client.post("/auth/register", json=NEW_ACCOUNT)
+
+    assert [to for to, _ in outbox.verification] == ["carol@example.com"]
+    assert outbox.registration_notice == []
 
 
 @pytest.mark.parametrize(
-    ("taken", "detail"),
-    [
-        (
-            {"username": "alice", "email": "another@example.com"},
-            "Username already in use.",
-        ),
-        (
-            {"username": "another", "email": "alice@example.com"},
-            "Email already in use.",
-        ),
-    ],
+    "taken",
+    [{"email": "another@example.com"}, {}],
+    ids=["the username", "the username and the email"],
 )
-def test_conflict_that_is_only_caught_by_the_database_is_reported_cleanly(
-    client: TestClient,
-    session: Session,
-    monkeypatch: pytest.MonkeyPatch,
-    taken: dict,
-    detail: str,
+def test_username_conflict_only_the_database_catches_is_refused(
+    client: TestClient, session: Session, race_lost: None, outbox, taken: dict
 ) -> None:
     add_user(session, "alice")
-    monkeypatch.setattr(auth_service, "_registration_conflict", lambda *args: None)
 
     response = client.post("/auth/register", json=registration(**taken))
 
     assert response.status_code == 409
-    assert response.json() == {"detail": detail}
+    assert response.json() == {"detail": "Username already in use."}
     assert session.scalars(select(User.username)).all() == ["alice"]
+    assert outbox.registration_notice == []
+
+
+def test_email_conflict_only_the_database_catches_is_answered_like_a_new_account(
+    client: TestClient,
+    session: Session,
+    race_lost: None,
+    outbox,
+    hashed: list[str],
+) -> None:
+    add_user(session, "alice")
+
+    response = client.post("/auth/register", json=TAKEN_EMAIL)
+
+    assert response.status_code == 202
+    assert response.json() == ACCEPTED
+    assert session.scalars(select(User.username)).all() == ["alice"]
+    assert count(session, EmailVerificationToken) == 0
+    assert outbox.verification == []
+    assert outbox.registration_notice == ["alice@example.com"]
+    assert hashed == [PASSWORD]
+
+
+@pytest.mark.parametrize("holder", [None, *HOLDERS])
+def test_password_is_hashed_once_whether_or_not_the_email_is_taken(
+    client: TestClient, session: Session, hashed: list[str], holder: str | None
+) -> None:
+    if holder is not None:
+        add_user(session, "alice", **HOLDERS[holder])
+
+    client.post("/auth/register", json=TAKEN_EMAIL)
+
+    assert hashed == [PASSWORD]
+
+
+def test_password_is_hashed_even_when_no_more_notices_are_sent(
+    client: TestClient, session: Session, hashed: list[str], outbox
+) -> None:
+    add_user(session, "alice")
+
+    for username in ("another", "yet_another"):
+        client.post(
+            "/auth/register",
+            json=registration(username=username, email="alice@example.com"),
+        )
+
+    assert hashed == [PASSWORD, PASSWORD]
+    assert outbox.registration_notice == ["alice@example.com"]
+
+
+def test_new_account_and_taken_email_read_the_same_and_write_about_the_same(
+    client: TestClient, session: Session
+) -> None:
+    add_user(session, "alice")
+
+    with recorded_statements() as new_account:
+        client.post("/auth/register", json=NEW_ACCOUNT)
+    with recorded_statements() as taken:
+        client.post("/auth/register", json=TAKEN_EMAIL)
+
+    def reads(statements: list[str]) -> list[str]:
+        return [s for s in statements if s.startswith("SELECT")]
+
+    def writes(statements: list[str]) -> list[str]:
+        return [s for s in statements if not s.startswith("SELECT")]
+
+    assert len(reads(taken)) == 2
+    assert reads(new_account) == reads(taken)
+    # Taken: the per-IP counter, the notice's. New: that counter, account, old links, link.
+    assert len(writes(taken)) == 2
+    assert len(writes(new_account)) == 4
 
 
 @pytest.mark.parametrize(
@@ -256,7 +488,7 @@ def test_field_length_limits_are_inclusive(client: TestClient) -> None:
         json=registration(username="a" * 30, display_name="x" * 50, password="x" * 12),
     )
 
-    assert response.status_code == 201
+    assert response.status_code == 202
 
 
 def test_password_minimum_length_comes_from_configuration(
@@ -268,13 +500,13 @@ def test_password_minimum_length_comes_from_configuration(
     long_enough = client.post("/auth/register", json=registration(password="x" * 20))
 
     assert too_short.status_code == 422
-    assert long_enough.status_code == 201
+    assert long_enough.status_code == 202
 
 
 def test_password_needs_no_particular_character_classes(client: TestClient) -> None:
     response = client.post("/auth/register", json=registration(password="a" * 12))
 
-    assert response.status_code == 201
+    assert response.status_code == 202
 
 
 def test_validation_error_does_not_echo_the_submitted_values(
@@ -308,7 +540,7 @@ def test_client_cannot_set_fields_it_does_not_own(
         ),
     )
 
-    assert response.status_code == 201
+    assert response.status_code == 202
     user = session.scalars(select(User)).one()
     assert user.is_active is True
     assert user.email_verified_at is None

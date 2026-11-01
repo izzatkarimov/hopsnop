@@ -143,12 +143,16 @@ class Outbox:
     def __init__(self) -> None:
         self.verification: list[tuple[str, str]] = []
         self.password_reset: list[tuple[str, str]] = []
+        self.registration_notice: list[str] = []
 
     def send_email_verification(self, *, to: str, url: str) -> None:
         self.verification.append((to, url))
 
     def send_password_reset(self, *, to: str, url: str) -> None:
         self.password_reset.append((to, url))
+
+    def send_registration_notice(self, *, to: str) -> None:
+        self.registration_notice.append(to)
 
 
 @pytest.fixture

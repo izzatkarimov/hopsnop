@@ -96,6 +96,7 @@ def assert_gone(
                 "password-confirmation:account",
                 "data-export:account",
                 "image-upload:account",
+                "registration-notice:account",
             )
         ]
         for name in names:
@@ -1112,9 +1113,10 @@ def test_names_are_taken_until_the_deletion_is_committed_and_free_from_then_on(
     assert deleted.status_code == 204
     created = newcomer.post("/auth/register", json=again)
     try:
-        assert created.status_code == 201
-        assert created.json()["id"] != str(owner.id)
+        assert created.status_code == 202
         assert stored(owner) is None
+        with SessionLocal() as db:
+            assert db.scalar(select(User.id).where(User.username == owner.name))
     finally:
         with SessionLocal() as db:
             db.execute(User.__table__.delete().where(User.username == owner.name))

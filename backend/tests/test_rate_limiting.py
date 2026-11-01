@@ -693,7 +693,7 @@ def test_registration_is_limited_per_address(at, session: Session) -> None:
         json=registration(username="onemore", email="onemore@example.com"),
     )
 
-    assert [response.status_code for response in created] == [201] * allowed
+    assert [response.status_code for response in created] == [202] * allowed
     assert refused.status_code == 429
     assert refused.json() == RATE_LIMITED
     assert refused.headers["retry-after"].isdigit()
@@ -727,7 +727,7 @@ def test_registration_limit_is_per_address_and_not_per_email(
     payload = registration(username="carol", email="carol@example.com")
 
     assert at(ADDRESS).post("/auth/register", json=payload).status_code == 429
-    assert at(OTHER_ADDRESS).post("/auth/register", json=payload).status_code == 201
+    assert at(OTHER_ADDRESS).post("/auth/register", json=payload).status_code == 202
 
 
 def test_registration_is_possible_again_when_the_window_is_over(
@@ -741,7 +741,103 @@ def test_registration_is_possible_again_when_the_window_is_over(
 
     pass_time(minutes=settings.rate_limit_window_minutes)
 
-    assert client.post("/auth/register", json=payload).status_code == 201
+    assert client.post("/auth/register", json=payload).status_code == 202
+
+
+def taken_email(client: TestClient, email: str = "alice@example.com"):
+    return client.post(
+        "/auth/register", json=registration(username="someone_new", email=email)
+    )
+
+
+def test_notice_is_limited_per_account_and_the_answer_never_shows_it(
+    at, alice_account: User, outbox
+) -> None:
+    first = taken_email(at(ADDRESS))
+    others = [taken_email(at(f"192.0.2.{number}")) for number in range(1, 6)]
+
+    assert first.status_code == 202
+    assert outbox.registration_notice == ["alice@example.com"]
+    for response in others:
+        assert response.status_code == 202
+        assert response.text == first.text
+        assert dict(response.headers) == dict(first.headers)
+        assert "retry-after" not in response.headers
+
+
+def test_notice_can_be_sent_again_when_the_window_is_over(
+    at, alice_account: User, outbox, pass_time
+) -> None:
+    client = at(ADDRESS)
+    taken_email(client)
+
+    pass_time(minutes=settings.rate_limit_window_minutes - 1)
+    taken_email(client)
+    assert len(outbox.registration_notice) == 1
+
+    pass_time(minutes=1)
+    taken_email(client)
+    assert len(outbox.registration_notice) == 2
+
+
+def test_notice_limit_is_read_from_the_settings(
+    at, alice_account: User, outbox, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "registration_notices_per_account", 2)
+    client = at(ADDRESS)
+
+    for _ in range(3):
+        taken_email(client)
+
+    assert len(outbox.registration_notice) == 2
+
+
+def test_notice_limit_is_each_accounts_own(
+    at, alice_account: User, bob_account: User, outbox
+) -> None:
+    client = at(ADDRESS)
+
+    for email in ("alice@example.com", "alice@example.com", "bob@example.com"):
+        taken_email(client, email)
+
+    assert outbox.registration_notice == ["alice@example.com", "bob@example.com"]
+
+
+def test_notice_is_counted_under_a_keyed_hash_of_the_account(
+    at, session: Session, alice_account: User
+) -> None:
+    taken_email(at(ADDRESS))
+
+    account = str(alice_account.id)
+    assert counters(session)[key_hash("registration-notice:account", account)] == 1
+    rows = session.execute(select(RateLimit.__table__)).all()
+    stored = " ".join(str(value) for row in rows for value in row)
+    for raw in ("alice", "example.com", account):
+        assert raw not in stored
+
+
+def test_deactivated_holder_is_counted_like_any_other_and_told_nothing(
+    at, session: Session, outbox
+) -> None:
+    inactive = add_user(session, "inactive", active=False)
+
+    response = taken_email(at(ADDRESS), "inactive@example.com")
+
+    assert response.status_code == 202
+    assert outbox.registration_notice == []
+    account = str(inactive.id)
+    assert counters(session)[key_hash("registration-notice:account", account)] == 1
+
+
+def test_a_new_account_takes_no_place_in_the_notice_counter(
+    at, session: Session, outbox
+) -> None:
+    at(ADDRESS).post("/auth/register", json=registration())
+
+    account = str(session.scalars(select(User.id)).one())
+    stored = counters(session)
+    assert key_hash("registration-notice:account", account) not in stored
+    assert stored == {key_hash("register", ADDRESS): 1}
 
 
 def test_forgot_password_is_limited_per_address(
@@ -1190,6 +1286,29 @@ def test_concurrent_correct_and_wrong_logins_count_only_the_wrong_ones(
             .where(UserSession.user_id == account.id)
         )
     assert sessions == right.count(200)
+
+
+def test_concurrent_attempts_on_a_taken_email_send_one_notice_between_them(
+    committed, outbox
+) -> None:
+    account = committed()
+    workers = 8
+
+    def attempt(number: int) -> tuple[int, str]:
+        with account.client(number) as client:
+            response = client.post(
+                "/auth/register",
+                json=registration(
+                    username=f"{account.name}_{number}", email=account.email
+                ),
+            )
+            return response.status_code, response.text
+
+    answers = at_once(workers, attempt)
+
+    assert {status for status, _ in answers} == {202}
+    assert len({text for _, text in answers}) == 1
+    assert outbox.registration_notice == [account.email]
 
 
 def reset_with(account: Account, token: str, number: int = 99) -> int:

@@ -112,6 +112,7 @@ def counters_named_after(user_id: object, username: str, email: str) -> list[str
             "password-confirmation:account",
             "data-export:account",
             "image-upload:account",
+            "registration-notice:account",
         )
     ]
     for identifier in (username, email):
@@ -1171,13 +1172,14 @@ def test_deleting_again_is_not_counted_against_anything(
 
 
 def sign_up(client: TestClient, outbox, **overrides: object) -> dict:
-    created = client.post("/auth/register", json=registration(**overrides))
-    assert created.status_code == 201, created.text
+    details = registration(**overrides)
+    created = client.post("/auth/register", json=details)
+    assert created.status_code == 202, created.text
     token = token_from(outbox.verification[-1][1])
     assert client.post("/auth/verify-email", json={"token": token}).status_code == 200
-    account = created.json()
-    assert log_in(client, account["username"]).status_code == 200
-    return account
+    logged_in = log_in(client, details["username"])
+    assert logged_in.status_code == 200
+    return logged_in.json()
 
 
 @pytest.mark.parametrize(
@@ -1198,15 +1200,16 @@ def test_username_and_email_can_be_registered_again_at_once(
 ) -> None:
     alice_id = alice_account.id
     newcomer = make_client()
-    refused = newcomer.post("/auth/register", json=registration(**taking))
-    assert refused.status_code == 409
+    while_taken = newcomer.post("/auth/register", json=registration(**taking))
+    assert while_taken.status_code == (202 if "username" in taking else 409)
+    assert session.scalars(select(User.id)).all() == [alice_id]
 
     assert remove(alice_client).status_code == 204
     created = newcomer.post("/auth/register", json=registration(**taking))
 
-    assert created.status_code == 201
-    assert created.json()["id"] != str(alice_id)
+    assert created.status_code == 202
     assert count(session, User) == 1
+    assert session.scalars(select(User.id)).one() != alice_id
     assert user_row(session, alice_id) is None
 
 

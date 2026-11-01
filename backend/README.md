@@ -108,8 +108,9 @@ others:
 
 - the session cookie is sent without `Secure` and without the `__Host-`
   prefix, because browsers do not return `Secure` cookies over plain HTTP;
-- verification and password reset links are written to the server log instead
-  of being emailed, unless `RESEND_API_KEY` and `EMAIL_FROM` are both set;
+- verification and password reset links and registration notices are written
+  to the server log instead of being emailed, unless `RESEND_API_KEY` and
+  `EMAIL_FROM` are both set;
 - `FRONTEND_URL` and `RATE_LIMIT_SECRET` have defaults, and `RESEND_API_KEY`
   and `EMAIL_FROM` may be left out;
 - the interactive API documentation is served.
@@ -141,7 +142,7 @@ nothing for frontend JavaScript to store.
 
 | Endpoint | Purpose |
 | --- | --- |
-| `POST /auth/register` | Create an unverified account and send a verification link |
+| `POST /auth/register` | Create an unverified account and send a verification link; if the email address is taken, create nothing and email its owner, with the same answer |
 | `POST /auth/verify-email` | Redeem a verification token |
 | `POST /auth/resend-verification` | Send a new verification link |
 | `POST /auth/login` | Check credentials, start a session, set the cookie |
@@ -250,7 +251,7 @@ all of it or none of it:
 | Follows, in both directions | Removed |
 | Stories, expired ones included, and who viewed them | Removed |
 | Views the account made of others' stories | Removed |
-| Rate-limit counters under its username, its email and its id (wrong passwords, exports, uploads) | Removed |
+| Rate-limit counters under its username, its email and its id (wrong passwords, exports, uploads, registration notices) | Removed |
 
 What is left is the tombstones, and only where somebody else's reply needs
 one to stay in its thread. A tombstone holds an id, the id of the post it
@@ -312,7 +313,8 @@ the first has done:
 | Somebody following the account | The deletion waits; the follow is removed | `404` |
 | Somebody replying to one of its posts | The deletion waits; the post stays as a tombstone for the reply | `404` |
 | Somebody liking or reposting one of its posts, or viewing its story | The deletion waits; the like or view is removed | `404` |
-| Registration of the same username or email | `409` until the deletion is committed | `201` |
+| Registration of the same username | `409` until the deletion is committed | `202`, a new account |
+| Registration of the same email with another username | `202`, nothing created, until the deletion is committed | `202`, a new account |
 
 A request that was let in before the deletion and is answered after it may
 find that what it would answer with is gone: a login or a new post that came
@@ -358,10 +360,31 @@ Login gives the same `401` for an unknown account, a wrong password and a
 deactivated account, and verifies a dummy hash when the account does not exist
 so that timing does not distinguish the cases either. `resend-verification` and
 `forgot-password` always answer `202` with the same body, also within the
-cooldown on links. Registration does report a username or email that is
-already taken. It is limited per address, which slows such questions down but
-does not prevent them; answering every registration alike would mean telling
-the owner of an address that is taken by email instead, and is deferred.
+cooldown on links.
+
+Registration answers a free and a taken email address alike: `202`, the same
+body and the same headers, also when two registrations race for the address and
+the unique constraint decides. For a taken address nothing is created, and its
+owner is sent [a notice](#email) instead, [limited per
+account](#rate-limiting). A taken username is refused with `409`. That is
+decided first, before the email address is read, so the `409` does not depend
+on it.
+
+**What registration still gives away.** The first answer is the same, but what
+follows it is not, because registering a free address creates an account and
+registering a taken one does not. A second request can tell them apart:
+
+- Logging in to the address with the password just registered answers `403`
+  (not verified) if the address was free, and `401` if it was taken.
+- Registering the same username again with another address answers `409` if the
+  address was free, and `202` if it was taken.
+
+So an address can still be tested, `REGISTRATIONS_PER_IP` per window from one
+client, as before; what changed is that no single answer says so, and that the
+owner of a taken address is told. The `409` can also reveal the username of an
+unverified account, which `GET /users/{username}` does not show (`404`).
+Closing both would take an account that does not exist until its address is
+verified, which is not how registration works here.
 
 The same body is not enough if the time differs. Sending an email takes the
 provider hundreds of milliseconds, so done within the request it would make
@@ -370,6 +393,15 @@ that has an account. The email is therefore sent after the response (see
 [Email](#email)), and the provider's time is not part of the response time.
 What still differs between the two cases is the database work of issuing a
 link, which the response does include.
+
+Registration sends its email after the response too, and hashes the password
+whether or not the address is taken, as that is most of its time. Both cases
+make the same two reads and, after the hash, one commit; a new account takes two
+statements more than a notice. Measured through a real server on a development
+machine, 60 requests each: a median of 48.1 ms for a new account and 46.5 ms for
+a taken address, with about 5 ms between the 10th and 90th percentile of each. A
+taken username is answered in 6.8 ms, as nothing is hashed, which says nothing
+about the email address.
 
 ### Cookie and CSRF
 
@@ -405,7 +437,8 @@ same-origin requests such as those from `/docs` are rejected.
 The endpoints that check a secret, send an email or take a picture are rate
 limited. A request
 over a limit is answered with `429` and a `Retry-After` header, the same
-answer whichever limit it was. The header is exposed to the frontend
+answer whichever limit it was; only the limit on registration notices is
+silent (see below). The header is exposed to the frontend
 (`Access-Control-Expose-Headers`), so its scripts can read it.
 
 | Endpoint | Counted | Per | Setting | Default |
@@ -416,6 +449,7 @@ answer whichever limit it was. The header is exposed to the frontend
 | `POST /auth/change-password`, `/auth/delete-account`, `/users/me/export` | failures | account | `PASSWORD_CONFIRMATION_FAILURES` | 5 together |
 | `POST /users/me/export` | exports | account | `DATA_EXPORTS_PER_ACCOUNT` | 3 |
 | `POST /auth/register` | requests | address | `REGISTRATIONS_PER_IP` | 5 |
+| | notices to a taken address, silently | account | `REGISTRATION_NOTICES_PER_ACCOUNT` | 1 |
 | `POST /auth/forgot-password`, `/auth/resend-verification` | requests | address | `EMAIL_REQUESTS_PER_IP` | 5 each |
 | `POST /auth/verify-email`, `/auth/reset-password` | requests | address | `TOKEN_REDEMPTIONS_PER_IP` | 10 each |
 | `PUT /users/me/avatar`, `POST /stories` | uploads | account | `IMAGE_UPLOADS_PER_ACCOUNT` | 20 together |
@@ -469,6 +503,14 @@ account are serialized by a lock on its row, so requests arriving at the
 same moment issue one link between them, not one each. Redeeming a link
 takes the same lock, and takes it before the token's own, which is the order
 a request for a new link takes them in: the two cannot deadlock.
+
+**Registration notices.** The email to the owner of a taken address leaves no
+token to read a cooldown from, so it is counted per account, in the common
+window: by default one notice per address per 15 minutes. A full counter means
+no email and the same `202`, because a `429` would say that the address is
+taken.
+
+None of these limits yet caps the total number of emails sent in a day.
 
 **Storage.** The counters are rows in the `rate_limits` table (PostgreSQL, no
 Redis and nothing in memory), so they are shared by every worker process and
@@ -526,7 +568,8 @@ different scripts are not detected, and display names are not unique.
 
 ### Email
 
-Account email, the verification link and the password reset link, is sent
+Account email, the verification link, the password reset link and the
+registration notice, is sent
 through [Resend](https://resend.com) by `ResendEmailSender` in
 `app/services/email.py`: one `POST https://api.resend.com/emails` per email,
 with the key in an `Authorization: Bearer` header and a JSON body of `from`
@@ -537,9 +580,18 @@ timeout of 10 seconds; there is no Resend SDK.
 | --- | --- | --- |
 | Verification | Verify your Hopsnop email address | The link, and that it expires in `EMAIL_VERIFICATION_TOKEN_LIFETIME_HOURS` hours |
 | Password reset | Reset your Hopsnop password | The link, that it expires in `PASSWORD_RESET_TOKEN_LIFETIME_MINUTES` minutes, and that the email can be ignored by someone who did not ask for it |
+| Registration notice | Someone tried to register with your Hopsnop email address | That someone tried, and that nothing was created or changed; links to log in and to reset the password; that logging in shows how to verify an address that never was; and that it can be ignored by someone who did not try. No token, and nothing from the request, so that registering cannot deliver somebody's words to any inbox |
 
-The HTML version is the same text, escaped, with the link as a link: no
+The HTML version is the same text, escaped, with each link as a link: no
 images, no styles, nothing that is loaded from elsewhere.
+
+**A taken address that was never verified** gets the same notice, not a new
+verification link. Anyone can register someone else's address, and a link sent
+just as its owner signs up would invite them to activate an account whose
+password somebody else chose. The notice leads to a password reset first, which
+works on an unverified account, and a new link is one step further, on
+`/verify-email`. No link in the mailbox is withdrawn either. A deactivated
+account is sent nothing, as neither link works for it.
 
 **Open and click tracking must stay off** for the sending domain in the
 Resend dashboard. Open tracking adds an invisible image to every email, which
@@ -565,7 +617,8 @@ Production does not start without `RESEND_API_KEY` and `EMAIL_FROM` (see
 [Production](#production)). In development both are optional: with both set,
 email is sent through Resend, so that real email can be tried locally;
 otherwise each link is written to the server log, the only place a link is
-ever logged. To verify an account locally that way, register, then copy the
+ever logged, and a registration notice as one line naming the address. To
+verify an account locally that way, register, then copy the
 token from the `[development] Email verification link` line in the server
 log:
 
@@ -1847,7 +1900,7 @@ What that comes to, as tested with real transactions
 | A verification link asked for after the purge found the account abandoned (these four with `PURGE_UNVERIFIED_ACCOUNTS` on) | The account is kept, the link works |
 | A verification link being opened as it expires | The account is verified and kept |
 | A link opened while its account is being purged | `400`, the answer for a link that does not exist |
-| Registration of a name whose account is being purged | `409`, or `201` once the purge has committed |
+| Registration of a name whose account is being purged | `409`, or `202` and a new account once the purge has committed |
 | A counter that a request is starting again, not yet committed | The purge passes it over without waiting; the count stands |
 | A failed login under counters that the purge has removed and not yet committed | The login waits, then `401`, counted as the first of a new window |
 | A story being viewed as it expires | The view is recorded; the story goes with a later run |

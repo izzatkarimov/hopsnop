@@ -22,6 +22,8 @@ class EmailSender(Protocol):
 
     def send_password_reset(self, *, to: str, url: str) -> None: ...
 
+    def send_registration_notice(self, *, to: str) -> None: ...
+
 
 class ConsoleEmailSender:
     """Development only; WARNING so it shows with the default logging setup."""
@@ -32,27 +34,34 @@ class ConsoleEmailSender:
     def send_password_reset(self, *, to: str, url: str) -> None:
         logger.warning("[development] Password reset link for %s: %s", to, url)
 
+    def send_registration_notice(self, *, to: str) -> None:
+        logger.warning("[development] Registration notice for %s", to)
+
+
+class Link(str):
+    """A paragraph of an email that is a link."""
+
+
+def _html_paragraph(paragraph: str) -> str:
+    escaped = html.escape(paragraph)
+    if isinstance(paragraph, Link):
+        return f'<p><a href="{escaped}">{escaped}</a></p>\n'
+    return f"<p>{escaped}</p>\n"
+
 
 @dataclass(frozen=True)
 class Email:
     subject: str
-    before: str
-    link: str
-    after: str
+    paragraphs: tuple[str, ...]
 
     @property
     def text(self) -> str:
-        return f"{self.before}\n\n{self.link}\n\n{self.after}\n"
+        return "\n\n".join(self.paragraphs) + "\n"
 
     @property
     def html(self) -> str:
         """Escaped: no images and nothing loaded from elsewhere."""
-        link = html.escape(self.link)
-        return (
-            f"<p>{html.escape(self.before)}</p>\n"
-            f'<p><a href="{link}">{link}</a></p>\n'
-            f"<p>{html.escape(self.after)}</p>\n"
-        )
+        return "".join(_html_paragraph(paragraph) for paragraph in self.paragraphs)
 
 
 def _counted(count: int, unit: str) -> str:
@@ -63,9 +72,11 @@ def verification_email(url: str) -> Email:
     hours = settings.email_verification_token_lifetime_hours
     return Email(
         subject="Verify your Hopsnop email address",
-        before="Open this link to verify your email address for Hopsnop:",
-        link=url,
-        after=f"The link expires in {_counted(hours, 'hour')}.",
+        paragraphs=(
+            "Open this link to verify your email address for Hopsnop:",
+            Link(url),
+            f"The link expires in {_counted(hours, 'hour')}.",
+        ),
     )
 
 
@@ -73,11 +84,29 @@ def password_reset_email(url: str) -> Email:
     minutes = settings.password_reset_token_lifetime_minutes
     return Email(
         subject="Reset your Hopsnop password",
-        before="Open this link to choose a new password for your Hopsnop account:",
-        link=url,
-        after=(
+        paragraphs=(
+            "Open this link to choose a new password for your Hopsnop account:",
+            Link(url),
             f"The link expires in {_counted(minutes, 'minute')}. If you didn't "
-            "ask to reset your password, you can ignore this email."
+            "ask to reset your password, you can ignore this email.",
+        ),
+    )
+
+
+def registration_notice_email() -> Email:
+    # Nothing from the request: registering mustn't deliver anyone's words to any inbox.
+    return Email(
+        subject="Someone tried to register with your Hopsnop email address",
+        paragraphs=(
+            "Someone tried to create a Hopsnop account with this email address, "
+            "which already has one. No new account was created and nothing was "
+            "changed.",
+            "If that was you, you can log in:",
+            Link(login_url()),
+            "If you have forgotten your password, you can reset it:",
+            Link(forgot_password_url()),
+            "If you never verified this address, logging in will show you how. "
+            "If it wasn't you, you can ignore this email.",
         ),
     )
 
@@ -101,6 +130,9 @@ class ResendEmailSender:
 
     def send_password_reset(self, *, to: str, url: str) -> None:
         self._send(to, password_reset_email(url), "password reset")
+
+    def send_registration_notice(self, *, to: str) -> None:
+        self._send(to, registration_notice_email(), "registration notice")
 
     def _send(self, to: str, email: Email, purpose: str) -> None:
         try:
@@ -152,3 +184,11 @@ def email_verification_url(token: str) -> str:
 
 def password_reset_url(token: str) -> str:
     return f"{settings.frontend_url}/reset-password?{urlencode({'token': token})}"
+
+
+def login_url() -> str:
+    return f"{settings.frontend_url}/login"
+
+
+def forgot_password_url() -> str:
+    return f"{settings.frontend_url}/forgot-password"

@@ -7,8 +7,8 @@ import {
   deleteAccount,
   getCurrentUser,
   isEmailNotVerifiedError,
+  isUsernameTakenError,
   isWrongCurrentPasswordError,
-  takenField,
 } from "./auth";
 
 describe("getCurrentUser", () => {
@@ -84,11 +84,11 @@ describe("telling the backend's refusals apart", () => {
     expect(isWrongCurrentPasswordError(new Error("Current password is incorrect."))).toBe(false);
   });
 
-  it("recognises an unverified email address and taken registration fields", () => {
+  it("recognises an unverified email address and a taken username", () => {
     expect(isEmailNotVerifiedError(new ApiError("forbidden", 403, "Email address is not verified."))).toBe(true);
     expect(isEmailNotVerifiedError(new ApiError("forbidden", 403, "Cross-origin request rejected."))).toBe(false);
-    expect(takenField(new ApiError("conflict", 409, "Username already in use."))).toBe("username");
-    expect(takenField(new ApiError("conflict", 409, "Email already in use."))).toBe("email");
-    expect(takenField(new ApiError("conflict", 409, "Something else."))).toBeNull();
+    expect(isUsernameTakenError(new ApiError("conflict", 409, "Username already in use."))).toBe(true);
+    expect(isUsernameTakenError(new ApiError("conflict", 409, "Something else."))).toBe(false);
+    expect(isUsernameTakenError(new ApiError("bad_request", 400, "Username already in use."))).toBe(false);
   });
 });

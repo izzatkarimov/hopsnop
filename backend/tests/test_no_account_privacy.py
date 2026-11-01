@@ -36,7 +36,7 @@ EMPTY_UPDATE = "At least one of display_name or bio must be provided."
 
 def register_and_verify(client: TestClient, outbox, **overrides: object):
     response = client.post("/auth/register", json=registration(**overrides))
-    assert response.status_code == 201, response.text
+    assert response.status_code == 202, response.text
     token = token_from(outbox.verification[-1][1])
     assert client.post("/auth/verify-email", json={"token": token}).status_code == 200
     return response
@@ -134,10 +134,9 @@ def test_registration_takes_no_privacy_flag(
 ) -> None:
     response = client.post("/auth/register", json=registration(is_private=is_private))
 
-    assert response.status_code == 201
+    assert response.status_code == 202
     assert "is_private" not in response.json()
     user = session.scalars(text("SELECT id FROM users")).one()
-    assert str(user) == response.json()["id"]
     assert "is_private" not in columns(session, session.get(User, user))
 
 
@@ -270,7 +269,7 @@ def test_no_response_and_no_query_mentions_account_privacy(
         call(bob, "DELETE", f"/posts/{reply['id']}")
 
     statuses = [response.status_code for response in responses]
-    assert set(statuses) == {200, 201, 204, 422}
+    assert set(statuses) == {200, 201, 202, 204, 422}
     assert statuses.count(422) == 1
     for response in responses:
         if response.content:

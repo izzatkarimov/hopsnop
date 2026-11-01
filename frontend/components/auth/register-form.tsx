@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 import { Notice } from "@/components/ui/notice";
 import { TextField } from "@/components/ui/text-field";
 import { isApiError, unexpectedErrorMessage } from "@/lib/api";
-import { register, takenField } from "@/lib/auth";
+import { isUsernameTakenError, register } from "@/lib/auth";
 import {
   PASSWORD_MIN_LENGTH,
   validateDisplayName,
@@ -58,19 +58,15 @@ function fieldErrorsFrom(error: unknown): FieldErrors {
     return errors;
   }
 
-  const taken = takenField(error);
-  if (taken === "username") {
+  if (isUsernameTakenError(error)) {
     return { username: "That username is already taken." };
-  }
-  if (taken === "email") {
-    return { email: "An account with this email address already exists." };
   }
   return {};
 }
 
 function formErrorFrom(error: unknown): string {
   if (isApiError(error) && error.kind === "conflict") {
-    return "That username or email address is already in use.";
+    return "That username is already taken.";
   }
   if (isApiError(error) && error.kind === "validation") {
     return "Some details were not accepted. Check them and try again.";

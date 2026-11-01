@@ -42,7 +42,6 @@ export type DeleteAccountRequest = {
 /* The backend reports text only; keep in step with app/services/auth.py. */
 const EMAIL_NOT_VERIFIED = "Email address is not verified.";
 const USERNAME_TAKEN = "Username already in use.";
-const EMAIL_TAKEN = "Email already in use.";
 const CURRENT_PASSWORD_WRONG = "Current password is incorrect.";
 
 /** Private fields such as the email address are deliberately not kept in app state. */
@@ -73,9 +72,9 @@ export async function getCurrentUser(): Promise<User | null> {
   }
 }
 
-/** No session here: the address has to be verified first. */
+/** No session, and the same answer whether or not the address has an account. */
 export async function register(data: RegisterRequest): Promise<void> {
-  await apiRequest<AccountResponse>("/auth/register", {
+  await apiRequest<MessageResponse>("/auth/register", {
     method: "POST",
     body: data,
   });
@@ -166,9 +165,10 @@ export function isEmailNotVerifiedError(error: unknown): boolean {
   );
 }
 
-export function takenField(error: unknown): "username" | "email" | null {
-  if (!isApiError(error) || error.kind !== "conflict") return null;
-  if (error.message === USERNAME_TAKEN) return "username";
-  if (error.message === EMAIL_TAKEN) return "email";
-  return null;
+export function isUsernameTakenError(error: unknown): boolean {
+  return (
+    isApiError(error) &&
+    error.kind === "conflict" &&
+    error.message === USERNAME_TAKEN
+  );
 }

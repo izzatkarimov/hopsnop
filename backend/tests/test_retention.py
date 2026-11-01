@@ -564,7 +564,7 @@ def test_its_username_and_address_can_be_registered_again(
 
     assert purge(session) == removed(unverified_accounts=1)
 
-    assert client.post("/auth/register", json=registration()).status_code == 201
+    assert client.post("/auth/register", json=registration()).status_code == 202
     new = session.scalar(select(User).where(User.username == "alice"))
     assert new.id != old
     assert new.email_verified_at is None
@@ -677,7 +677,7 @@ def test_a_purged_account_cannot_redeem_what_was_sent_to_it(
     session: Session, client: TestClient, issued: list[str], outbox
 ) -> None:
     registered = client.post("/auth/register", json=registration())
-    assert registered.status_code == 201
+    assert registered.status_code == 202
     asked = client.post("/auth/forgot-password", json={"email": "alice@example.com"})
     assert asked.status_code == 202
     verification, reset = issued
@@ -705,7 +705,7 @@ def test_a_purged_account_cannot_redeem_what_was_sent_to_it(
 def test_an_account_that_verifies_in_time_is_an_account_like_any_other(
     session: Session, client: TestClient, issued: list[str], outbox
 ) -> None:
-    assert client.post("/auth/register", json=registration()).status_code == 201
+    assert client.post("/auth/register", json=registration()).status_code == 202
     assert (
         client.post("/auth/verify-email", json={"token": issued[0]}).status_code == 200
     )

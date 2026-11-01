@@ -1,17 +1,19 @@
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
 
 from app.core.config import settings
 from app.core.security import hash_token
 from app.db.session import SessionLocal
-from app.models import EmailVerificationToken, PasswordResetToken, User
+from app.models import EmailVerificationToken, PasswordResetToken, RateLimit, User
 from app.services import auth as auth_service
+from app.services.rate_limit import key_hash
 from concurrency import TIMEOUT, Gate, let_run
-from helpers import PASSWORD, log_in
+from helpers import PASSWORD, log_in, registration
 
 NEW_PASSWORD = "an entirely different passphrase"
 
@@ -239,3 +241,53 @@ def test_redeeming_a_link_while_another_is_requested_fails_neither(
         else:
             assert user.email_verified_at is None
         assert db.scalar(select(func.count()).select_from(model)) == 1
+
+
+def test_losing_the_race_for_an_address_is_answered_like_winning_it(
+    account, monkeypatch: pytest.MonkeyPatch, outbox
+) -> None:
+    clients = account()
+    address = f"race_{uuid.uuid4().hex[:12]}@example.com"
+    winner, loser = f"{clients.name}_w", f"{clients.name}_l"
+    gate = Gate()
+    monkeypatch.setattr(
+        auth_service, "hash_password", gate.wrap(auth_service.hash_password)
+    )
+
+    def register(client: TestClient, username: str):
+        return client.post(
+            "/auth/register", json=registration(username=username, email=address)
+        )
+
+    try:
+        with ThreadPoolExecutor(1) as pool:
+            gate.close()
+            losing = pool.submit(register, clients.client(0), loser)
+            assert gate.reached.wait(TIMEOUT), "the request never got that far"
+            won = register(clients.client(1), winner)
+            gate.open()
+            lost = losing.result(TIMEOUT)
+
+        assert won.status_code == lost.status_code == 202
+        assert won.text == lost.text
+        assert dict(won.headers) == dict(lost.headers)
+        with SessionLocal() as db:
+            [user] = db.scalars(select(User).where(User.email == address)).all()
+            assert user.username == winner
+            links = select(func.count()).where(
+                EmailVerificationToken.user_id == user.id
+            )
+            assert db.scalar(links) == 1
+        assert [to for to, _ in outbox.verification] == [address]
+        assert outbox.registration_notice == [address]
+    finally:
+        with SessionLocal() as db:
+            for user_id in db.scalars(select(User.id).where(User.email == address)):
+                db.execute(
+                    delete(RateLimit).where(
+                        RateLimit.key_hash
+                        == key_hash("registration-notice:account", str(user_id))
+                    )
+                )
+            db.execute(delete(User).where(User.email == address))
+            db.commit()

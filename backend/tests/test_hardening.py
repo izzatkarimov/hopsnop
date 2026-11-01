@@ -129,12 +129,12 @@ def production(monkeypatch: pytest.MonkeyPatch, **values: object) -> Settings:
 
 @pytest.mark.parametrize("name", LEGITIMATE_NAMES)
 def test_legitimate_display_name_is_accepted_at_registration(
-    client: TestClient, name: str
+    client: TestClient, session: Session, name: str
 ) -> None:
     response = client.post("/auth/register", json=registration(display_name=name))
 
-    assert response.status_code == 201
-    assert response.json()["display_name"] == name
+    assert response.status_code == 202
+    assert session.scalars(select(User.display_name)).one() == name
 
 
 @pytest.mark.parametrize("name", LEGITIMATE_NAMES)
@@ -195,14 +195,14 @@ def test_refused_display_name_is_not_echoed(client: TestClient) -> None:
 
 
 def test_surrounding_whitespace_is_still_trimmed_not_refused(
-    client: TestClient,
+    client: TestClient, session: Session
 ) -> None:
     response = client.post(
         "/auth/register", json=registration(display_name="  Alice Smith \n")
     )
 
-    assert response.status_code == 201
-    assert response.json()["display_name"] == "Alice Smith"
+    assert response.status_code == 202
+    assert session.scalars(select(User.display_name)).one() == "Alice Smith"
 
 
 @pytest.mark.parametrize("name", ["", "   ", "\t\n", "a" * 51])
@@ -898,6 +898,7 @@ def test_limits_are_settings_with_defaults_and_cannot_be_switched_off(
         "login_failures_per_identifier",
         "login_failures_per_ip",
         "registrations_per_ip",
+        "registration_notices_per_account",
         "email_requests_per_ip",
         "token_redemptions_per_ip",
         "password_confirmation_failures",

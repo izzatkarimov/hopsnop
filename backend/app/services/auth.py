@@ -1,6 +1,7 @@
 """Every writer commits once, at the end; raw tokens are never stored or logged."""
 
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import Select, delete, exists, select, update
@@ -30,11 +31,6 @@ class AuthError(Exception):
 class UsernameTakenError(AuthError):
     status_code = 409
     detail = "Username already in use."
-
-
-class EmailTakenError(AuthError):
-    status_code = 409
-    detail = "Email already in use."
 
 
 class InvalidCredentialsError(AuthError):
@@ -71,6 +67,20 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+@dataclass(frozen=True)
+class AddressHolder:
+    id: uuid.UUID
+    is_active: bool
+
+
+@dataclass(frozen=True)
+class Registration:
+    """A new account's raw link token; or who holds the address, if anyone does."""
+
+    raw_token: str | None = None
+    holder: AddressHolder | None = None
+
+
 def register_user(
     db: Session,
     *,
@@ -78,16 +88,20 @@ def register_user(
     email: str,
     password: str,
     display_name: str,
-) -> tuple[User, str]:
-    """Returns the user and the raw link token; no session until logged in."""
-    conflict = _registration_conflict(db, username, email)
-    if conflict is not None:
-        raise conflict
+) -> Registration:
+    """A taken address creates nothing; the caller must respond identically."""
+    if _username_is_taken(db, username):
+        raise UsernameTakenError
+    holder = _address_holder(db, email)
+    # Either way: this is most of the response's time, which mustn't tell the two apart.
+    password_hash = hash_password(password)
+    if holder is not None:
+        return Registration(holder=holder)
 
     user = User(
         username=username,
         email=email,
-        password_hash=hash_password(password),
+        password_hash=password_hash,
         display_name=display_name,
     )
     db.add(user)
@@ -100,7 +114,10 @@ def register_user(
         if constraint == "uq_users_username":
             raise UsernameTakenError from None
         if constraint == "uq_users_email":
-            raise EmailTakenError from None
+            # Postgres names one constraint; a username that collided too still decides.
+            if _username_is_taken(db, username):
+                raise UsernameTakenError from None
+            return Registration(holder=_address_holder(db, email))
         raise
 
     raw_token = _issue_token(
@@ -110,15 +127,19 @@ def register_user(
         settings.email_verification_token_lifetime,
     )
     db.commit()
-    return user, raw_token
+    return Registration(raw_token=raw_token)
 
 
-def _registration_conflict(db: Session, username: str, email: str) -> AuthError | None:
-    if db.scalar(select(User.id).where(User.username == username)) is not None:
-        return UsernameTakenError()
-    if db.scalar(select(User.id).where(User.email == email)) is not None:
-        return EmailTakenError()
-    return None
+def _username_is_taken(db: Session, username: str) -> bool:
+    return db.scalar(select(User.id).where(User.username == username)) is not None
+
+
+def _address_holder(db: Session, email: str) -> AddressHolder | None:
+    # Plain values: the caller's counting commits, which would expire a loaded User.
+    row = db.execute(
+        select(User.id, User.is_active).where(User.email == email)
+    ).one_or_none()
+    return AddressHolder(row.id, row.is_active) if row is not None else None
 
 
 def log_in(

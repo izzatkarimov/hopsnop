@@ -64,10 +64,14 @@ describe("VerifyEmail", () => {
     expect(verifyRequests().map((call) => call.body)).toEqual([{ token: TOKEN }, { token: TOKEN }]);
   });
 
-  it("waits for the link when opened without one, and sends nothing", () => {
+  it("says an email may be on its way when opened without a link, and sends nothing", () => {
     render(<VerifyEmail />);
 
-    expect(screen.getByRole("heading", { name: "Verify your email" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Check your email" })).toBeInTheDocument();
+    expect(
+      screen.getByText("If your address can be used, we've sent you an email. Follow what it says to finish."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/link we sent/)).not.toBeInTheDocument();
     expect(verifyRequests()).toEqual([]);
   });
 });

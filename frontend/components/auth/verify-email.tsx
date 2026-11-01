@@ -108,12 +108,12 @@ export function VerifyEmail() {
 
     case "waiting":
       return (
-        <AuthScreen title="Verify your email">
+        <AuthScreen title="Check your email">
           <p className="text-muted">
-            Check your inbox for the verification link we sent when you
-            registered. Open it to activate your account.
+            If your address can be used, we&apos;ve sent you an email. Follow
+            what it says to finish.
           </p>
-          <p className="text-muted">Need a new link?</p>
+          <p className="text-muted">Need a new verification link?</p>
           <ResendVerificationForm />
           <p className="text-center text-sm text-muted">
             <Link href="/login" className={textLinkClass}>

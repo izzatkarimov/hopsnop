@@ -291,7 +291,7 @@ def test_no_response_contains_a_secret(
     call(client, "POST", "/auth/logout")
 
     seen = {response.status_code for response in responses}
-    assert seen >= {200, 201, 202, 204, 400, 401, 403, 404, 409, 422}
+    assert seen >= {200, 202, 204, 400, 401, 403, 404, 409, 422}
 
     raw_tokens = [*verification_tokens, *session_tokens, reset_token]
     stored_hashes = [
@@ -463,6 +463,9 @@ class SendTimes:
     def send_password_reset(self, *, to: str, url: str) -> None:
         self._note("password reset")
 
+    def send_registration_notice(self, *, to: str) -> None:
+        self._note("registration notice")
+
 
 def post_as_a_server_would(path: str, body: dict, messages: list[dict]) -> None:
     payload = json.dumps(body).encode()
@@ -500,8 +503,14 @@ def post_as_a_server_would(path: str, body: dict, messages: list[dict]) -> None:
         (
             "/auth/register",
             registration(username="carol", email="carol@example.com"),
-            201,
+            202,
             "verification",
+        ),
+        (
+            "/auth/register",
+            registration(username="carol", email="alice@example.com"),
+            202,
+            "registration notice",
         ),
         ("/auth/resend-verification", {"email": "bob@example.com"}, 202, "verification"),
         ("/auth/forgot-password", {"email": "alice@example.com"}, 202, "password reset"),

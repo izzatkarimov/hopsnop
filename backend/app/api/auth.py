@@ -119,10 +119,29 @@ def data_export_limit(current: UserSession) -> rate_limit.Limit:
     )
 
 
+def registration_notice_limit(user_id: object) -> rate_limit.Limit:
+    """Per account, so registering can't be used to fill its owner's inbox."""
+    return rate_limit.Limit(
+        "registration-notice:account",
+        str(user_id),
+        settings.registration_notices_per_account,
+    )
+
+
+def _notice_is_due(db: DbSession, holder: auth_service.AddressHolder) -> bool:
+    """Counted for a deactivated holder too: the same work for every holder."""
+    try:
+        rate_limit.count(db, registration_notice_limit(holder.id))
+    except rate_limit.RateLimitedError:
+        # A 429 here would say that the address is taken.
+        return False
+    return holder.is_active
+
+
 @router.post(
     "/register",
-    response_model=AccountResponse,
-    status_code=status.HTTP_201_CREATED,
+    response_model=MessageResponse,
+    status_code=status.HTTP_202_ACCEPTED,
     dependencies=[limit_per_address("register", "registrations_per_ip")],
 )
 def register(
@@ -130,20 +149,30 @@ def register(
     db: DbSession,
     email_sender: EmailSenderDep,
     background_tasks: BackgroundTasks,
-) -> AccountResponse:
-    user, raw_token = auth_service.register_user(
+) -> MessageResponse:
+    registration = auth_service.register_user(
         db,
         username=data.username,
         email=data.email,
         password=data.password.get_secret_value(),
         display_name=data.display_name,
     )
-    background_tasks.add_task(
-        email_sender.send_email_verification,
-        to=user.email,
-        url=email_verification_url(raw_token),
+    # After the response, so its timing doesn't reveal which of the two it was.
+    if registration.raw_token is not None:
+        background_tasks.add_task(
+            email_sender.send_email_verification,
+            to=data.email,
+            url=email_verification_url(registration.raw_token),
+        )
+    elif registration.holder is not None and _notice_is_due(db, registration.holder):
+        background_tasks.add_task(email_sender.send_registration_notice, to=data.email)
+    # Same answer whether or not the address is taken or a notice was just sent.
+    return MessageResponse(
+        message=(
+            "If that email address can be used for a new account, a verification "
+            "email has been sent."
+        )
     )
-    return AccountResponse.model_validate(user)
 
 
 @router.post("/login", response_model=AccountResponse)
@@ -314,6 +343,7 @@ def _counters_named_after(
         *password_confirmation_limits(current),
         data_export_limit(current),
         image_upload_limit(current.user_id),
+        registration_notice_limit(current.user_id),
     ]
     for identifier in (account.username, account.email):
         limits += [

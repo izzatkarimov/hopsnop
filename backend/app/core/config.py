@@ -57,6 +57,8 @@ class Settings(BaseSettings):
     data_exports_per_account: int = Field(default=3, gt=0)
     # Per address, whatever their outcome.
     registrations_per_ip: int = Field(default=5, gt=0)
+    # Emails to the owner of a taken address; past this, nothing is sent or shown.
+    registration_notices_per_account: int = Field(default=1, gt=0)
     # For /auth/forgot-password and /auth/resend-verification, each.
     email_requests_per_ip: int = Field(default=5, gt=0)
     # For /auth/verify-email and /auth/reset-password, each.

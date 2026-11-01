@@ -23,7 +23,7 @@ INVALID_TOKEN = {"detail": "Invalid or expired verification token."}
 
 @pytest.fixture
 def raw_token(client: TestClient, session: Session, outbox) -> str:
-    assert client.post("/auth/register", json=registration()).status_code == 201
+    assert client.post("/auth/register", json=registration()).status_code == 202
     let_cooldown_pass(session)
     return token_from(outbox.verification[0][1])
 

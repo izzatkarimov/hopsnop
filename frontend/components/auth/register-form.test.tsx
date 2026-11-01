@@ -2,11 +2,14 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { api, deferred, json } from "@/test/api";
-import { account } from "@/test/render";
 import { RegisterForm } from "./register-form";
 
 const router = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => router }));
+
+const ACCEPTED = json(202, {
+  message: "If that email address can be used for a new account, a verification email has been sent.",
+});
 
 const VALID = {
   displayName: "  Test Viewer ",
@@ -77,8 +80,8 @@ describe("RegisterForm", () => {
     expect(registerRequests()).toEqual([]);
   });
 
-  it("creates the account with trimmed details and the password as typed, then asks to verify", async () => {
-    api.on("POST", "/auth/register", json(201, account));
+  it("sends trimmed details and the password as typed, then moves on without saying anything about the address", async () => {
+    api.on("POST", "/auth/register", ACCEPTED);
     const fields = setup();
     await fill(fields);
 
@@ -93,20 +96,19 @@ describe("RegisterForm", () => {
         password: " a long password ",
       },
     ]);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(fields.email).toHaveAccessibleDescription("");
   });
 
-  it.each([
-    ["username", "Username already in use.", "That username is already taken."],
-    ["email", "Email already in use.", "An account with this email address already exists."],
-  ] as const)("shows a taken %s on its field", async (field, detail, message) => {
-    api.on("POST", "/auth/register", json(409, { detail }));
+  it("shows a taken username on its field", async () => {
+    api.on("POST", "/auth/register", json(409, { detail: "Username already in use." }));
     const fields = setup();
     await fill(fields);
 
     await fields.user.click(fields.submit);
 
-    await waitFor(() => expect(fields[field]).toHaveAccessibleDescription(message));
-    expect(fields[field]).toHaveFocus();
+    await waitFor(() => expect(fields.username).toHaveAccessibleDescription("That username is already taken."));
+    expect(fields.username).toHaveFocus();
     expect(router.push).not.toHaveBeenCalled();
   });
 
@@ -129,7 +131,7 @@ describe("RegisterForm", () => {
   });
 
   it.each([
-    ["another conflict", json(409, { detail: "Something else." }), "That username or email address is already in use."],
+    ["another conflict", json(409, { detail: "Something else." }), "That username is already taken."],
     ["a rejection without a field", json(422, { detail: [] }), "Some details were not accepted. Check them and try again."],
     ["a server error", json(500, { detail: "Internal server error." }), "Something went wrong. Please try again."],
     [
@@ -161,7 +163,7 @@ describe("RegisterForm", () => {
     expect(registerRequests()).toHaveLength(1);
     expect(screen.getByRole("button", { name: "Creating account…" })).toBeDisabled();
 
-    await act(() => answer.respond(json(201, account)));
+    await act(() => answer.respond(ACCEPTED));
     await waitFor(() => expect(router.push).toHaveBeenCalledTimes(1));
     expect(registerRequests()).toHaveLength(1);
   });
@@ -186,13 +188,13 @@ describe("RegisterForm: one registration at a time", () => {
     expect(registerRequests()).toHaveLength(1);
     expect(screen.getByRole("button", { name: "Creating account…" })).toBeDisabled();
 
-    await act(() => answer.respond(json(201, account)));
+    await act(() => answer.respond(ACCEPTED));
     await waitFor(() => expect(router.push).toHaveBeenCalledTimes(1));
     expect(registerRequests()).toHaveLength(1);
   });
 
   it("lets the user try again after a failed registration", async () => {
-    api.on("POST", "/auth/register", json(500, { detail: "Internal server error." }), json(201, account));
+    api.on("POST", "/auth/register", json(500, { detail: "Internal server error." }), ACCEPTED);
     const fields = setup();
     await fill(fields);
 
@@ -205,7 +207,7 @@ describe("RegisterForm: one registration at a time", () => {
   });
 
   it("sends the registration once a refused field is corrected", async () => {
-    api.on("POST", "/auth/register", json(201, account));
+    api.on("POST", "/auth/register", ACCEPTED);
     const fields = setup();
     await fill(fields, { password: "too short" });
 

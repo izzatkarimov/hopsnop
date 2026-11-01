@@ -13,7 +13,9 @@ from app.services.email import (
     ConsoleEmailSender,
     ResendEmailSender,
     email_verification_url,
+    forgot_password_url,
     get_email_sender,
+    login_url,
     password_reset_url,
 )
 
@@ -101,6 +103,50 @@ def test_a_reset_email_has_the_link_its_expiry_and_says_it_can_be_ignored() -> N
         assert "If you didn't ask to reset your password, you can ignore this email." in version
 
 
+def test_a_verification_email_has_its_text_and_html_in_exactly_this_form() -> None:
+    resend = Resend()
+
+    resend.sender().send_email_verification(to=ADDRESS, url="https://app.example/v")
+
+    body = resend.body()
+    assert body["text"] == (
+        "Open this link to verify your email address for Hopsnop:\n\n"
+        "https://app.example/v\n\n"
+        "The link expires in 24 hours.\n"
+    )
+    assert body["html"] == (
+        "<p>Open this link to verify your email address for Hopsnop:</p>\n"
+        '<p><a href="https://app.example/v">https://app.example/v</a></p>\n'
+        "<p>The link expires in 24 hours.</p>\n"
+    )
+
+
+def test_a_registration_notice_says_what_happened_and_links_to_log_in_and_to_reset() -> None:
+    resend = Resend()
+
+    resend.sender().send_registration_notice(to=ADDRESS)
+
+    body = resend.body()
+    assert set(body) == {"from", "to", "subject", "text", "html"}
+    assert body["to"] == [ADDRESS]
+    assert body["subject"] == "Someone tried to register with your Hopsnop email address"
+    for version in (body["text"], html.unescape(body["html"])):
+        assert "Someone tried to create a Hopsnop account with this email address" in version
+        assert "No new account was created and nothing was changed." in version
+        assert login_url() in version
+        assert forgot_password_url() in version
+        assert "If you never verified this address, logging in will show you how." in version
+        assert "If it wasn't you, you can ignore this email." in version
+
+
+def test_the_links_of_a_registration_notice_lead_to_the_frontends_pages() -> None:
+    assert login_url() == f"{settings.frontend_url}/login"
+    assert forgot_password_url() == f"{settings.frontend_url}/forgot-password"
+
+
+LOADS_SOMETHING = ("<img", "<link", "<script", "<style", "<iframe", "src=", "url(")
+
+
 @pytest.mark.parametrize("send", ["send_email_verification", "send_password_reset"])
 def test_the_html_loads_nothing_and_links_nowhere_but_the_link(send: str) -> None:
     resend = Resend()
@@ -110,7 +156,19 @@ def test_the_html_loads_nothing_and_links_nowhere_but_the_link(send: str) -> Non
 
     page = resend.body()["html"]
     assert urls_in(page) == {url}
-    for loads_something in ("<img", "<link", "<script", "<style", "<iframe", "src=", "url("):
+    for loads_something in LOADS_SOMETHING:
+        assert loads_something not in page.lower()
+
+
+def test_the_html_of_a_notice_loads_nothing_and_links_only_to_its_two_pages() -> None:
+    resend = Resend()
+
+    resend.sender().send_registration_notice(to=ADDRESS)
+
+    page = resend.body()["html"]
+    assert urls_in(page) == {login_url(), forgot_password_url()}
+    assert page.count("<a href=") == 2
+    for loads_something in LOADS_SOMETHING:
         assert loads_something not in page.lower()
 
 
@@ -142,16 +200,16 @@ def unavailable(request: httpx.Request) -> httpx.Response:
     return httpx.Response(503, text=f"Unavailable for {ADDRESS}")
 
 
+FAILURES = [
+    (timeout, "Resend timed out"),
+    (unreachable, "ConnectError"),
+    (refused, "Resend answered 422"),
+    (unavailable, "Resend answered 503"),
+]
+
+
 @pytest.mark.parametrize("send", ["send_email_verification", "send_password_reset"])
-@pytest.mark.parametrize(
-    ("reply", "logged"),
-    [
-        (timeout, "Resend timed out"),
-        (unreachable, "ConnectError"),
-        (refused, "Resend answered 422"),
-        (unavailable, "Resend answered 503"),
-    ],
-)
+@pytest.mark.parametrize(("reply", "logged"), FAILURES)
 def test_a_failure_is_logged_in_one_line_without_secrets_and_not_raised(
     caplog: pytest.LogCaptureFixture, send: str, reply: Reply, logged: str
 ) -> None:
@@ -169,13 +227,50 @@ def test_a_failure_is_logged_in_one_line_without_secrets_and_not_raised(
         assert secret not in caplog.text
 
 
+@pytest.mark.parametrize(("reply", "logged"), FAILURES)
+def test_a_failed_notice_is_logged_like_the_others(
+    caplog: pytest.LogCaptureFixture, reply: Reply, logged: str
+) -> None:
+    caplog.set_level(logging.DEBUG)
+    resend = Resend(reply)
+
+    resend.sender().send_registration_notice(to=ADDRESS)
+
+    assert len(resend.requests) == 1
+    [record] = [r for r in caplog.records if r.name == "app.services.email"]
+    assert record.levelno == logging.WARNING
+    assert logged in record.getMessage()
+    assert "A registration notice email was not sent" in record.getMessage()
+    for secret in (
+        API_KEY,
+        ADDRESS,
+        login_url(),
+        forgot_password_url(),
+        "Invalid",
+        "Unavailable for",
+    ):
+        assert secret not in caplog.text
+
+
 def test_an_email_that_was_sent_is_not_logged(caplog: pytest.LogCaptureFixture) -> None:
     caplog.set_level(logging.DEBUG)
 
     Resend().sender().send_password_reset(to=ADDRESS, url=password_reset_url(TOKEN))
+    Resend().sender().send_registration_notice(to=ADDRESS)
 
     assert [r for r in caplog.records if r.name == "app.services.email"] == []
     assert TOKEN not in caplog.text
+
+
+def test_the_development_sender_writes_a_notice_to_the_log(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.WARNING)
+
+    ConsoleEmailSender().send_registration_notice(to=ADDRESS)
+
+    [record] = [r for r in caplog.records if r.name == "app.services.email"]
+    assert record.getMessage() == f"[development] Registration notice for {ADDRESS}"
 
 
 def test_the_key_is_not_in_the_senders_repr() -> None:
