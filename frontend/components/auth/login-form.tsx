@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import Link from "next/link";
 import { Notice } from "@/components/ui/notice";
@@ -11,21 +11,42 @@ import { useAuth } from "./auth-provider";
 import { PasswordField } from "./password-field";
 import { PasswordResetNotice } from "./password-reset-notice";
 import { primaryActionClass, textLinkClass } from "./styles";
+import { TwoFactorLoginStep } from "./two-factor-login-step";
 
 type Failure =
   | { type: "missing" }
   | { type: "credentials" }
   | { type: "unverified" }
+  | { type: "expired" }
   | { type: "unexpected"; message: string };
+
+/** The challenge lives here only: never in the URL, storage or a log. */
+type Step = { name: "password" } | { name: "code"; challenge: string };
 
 export function LoginForm() {
   const { logIn } = useAuth();
+  const [step, setStep] = useState<Step>({ name: "password" });
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [failure, setFailure] = useState<Failure | null>(null);
   // A ref: `submitting` only changes on the next render, too late for a second submit.
   const inFlight = useRef(false);
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  // Only when coming back from the code step, not on the page's first load.
+  const focusHeading = useRef(false);
+
+  useEffect(() => {
+    if (step.name !== "password" || !focusHeading.current) return;
+    focusHeading.current = false;
+    headingRef.current?.focus();
+  }, [step]);
+
+  function backToPassword(reason: Failure | null) {
+    focusHeading.current = true;
+    setFailure(reason);
+    setStep({ name: "password" });
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -41,12 +62,29 @@ export function LoginForm() {
     setFailure(null);
     try {
       // GuestOnly moves on once auth state changes; the form stays disabled until then.
-      await logIn({ identifier: identifier.trim(), password });
+      const pending = await logIn({ identifier: identifier.trim(), password });
+      if (pending) {
+        // An expired challenge needs a new login, so the password isn't kept.
+        setPassword("");
+        setStep({ name: "code", challenge: pending.challenge });
+        inFlight.current = false;
+        setSubmitting(false);
+      }
     } catch (error) {
       setFailure(toFailure(error));
       inFlight.current = false;
       setSubmitting(false);
     }
+  }
+
+  if (step.name === "code") {
+    return (
+      <TwoFactorLoginStep
+        challenge={step.challenge}
+        onBack={() => backToPassword(null)}
+        onExpired={() => backToPassword({ type: "expired" })}
+      />
+    );
   }
 
   return (
@@ -57,7 +95,11 @@ export function LoginForm() {
       onSubmit={handleSubmit}
       className="flex flex-col gap-4"
     >
-      <h1 className="text-2xl font-semibold tracking-tight">
+      <h1
+        ref={headingRef}
+        tabIndex={-1}
+        className="text-2xl font-semibold tracking-tight"
+      >
         Log in to Hopsnop
       </h1>
 
@@ -141,6 +183,13 @@ function FailureNotice({ failure }: { failure: Failure }) {
             request a new verification link
           </Link>
           .
+        </Notice>
+      );
+    case "expired":
+      return (
+        <Notice tone="error">
+          That login has expired, or too many wrong codes were entered. Enter
+          your password to try again.
         </Notice>
       );
     case "unexpected":

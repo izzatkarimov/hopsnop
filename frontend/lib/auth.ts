@@ -1,5 +1,6 @@
 import { ApiError, apiRequest, isApiError } from "./api";
-import type { User } from "./types";
+import type { ApiErrorKind } from "./api";
+import type { TwoFactorSetup, User } from "./types";
 
 export type AccountResponse = {
   id: string;
@@ -72,6 +73,16 @@ export type TwoFactorLoginRequest = {
 const EMAIL_NOT_VERIFIED = "Email address is not verified.";
 const USERNAME_TAKEN = "Username already in use.";
 const CURRENT_PASSWORD_WRONG = "Current password is incorrect.";
+const INVALID_CODE = "Invalid code.";
+const INVALID_LOGIN_CHALLENGE = "Invalid or expired login challenge.";
+const TWO_FACTOR_ALREADY_ON = "Two-factor login is already on.";
+const TWO_FACTOR_OFF = "Two-factor login is off.";
+const NO_PENDING_TWO_FACTOR = "No two-factor setup is pending.";
+
+/** A right password gets one of two answers. */
+export type LoginResult =
+  | { status: "signed_in"; user: User }
+  | { status: "two_factor"; challenge: string };
 
 /** Private fields such as the email address are deliberately not kept in app state. */
 function toUser(account: AccountResponse): User {
@@ -109,10 +120,27 @@ export async function register(data: RegisterRequest): Promise<void> {
   });
 }
 
-export async function logIn(data: LoginRequest): Promise<User> {
-  const account = await apiRequest<AccountResponse>("/auth/login", {
+/** 200 and 202 are told apart by the body: only the 202 carries a challenge. */
+export async function logIn(data: LoginRequest): Promise<LoginResult> {
+  const response = await apiRequest<AccountResponse | LoginChallengeResponse>(
+    "/auth/login",
+    { method: "POST", body: data },
+  );
+  if (typeof response === "object" && response !== null && "challenge" in response) {
+    const { challenge } = response;
+    if (typeof challenge !== "string" || challenge === "") {
+      throw new ApiError("server", null, "The server sent an unexpected answer.");
+    }
+    return { status: "two_factor", challenge };
+  }
+  return { status: "signed_in", user: toUser(response) };
+}
+
+/** Only now does the backend start the session and set the cookie. */
+export async function logInWithCode(challenge: string, code: string): Promise<User> {
+  const account = await apiRequest<AccountResponse>("/auth/login/two-factor", {
     method: "POST",
-    body: data,
+    body: { challenge, code } satisfies TwoFactorLoginRequest,
   });
   return toUser(account);
 }
@@ -177,6 +205,68 @@ export async function deleteAccount(password: string): Promise<void> {
   });
 }
 
+/** Not on until confirmed with a code; starting again replaces the secret. */
+export async function startTwoFactor(password: string): Promise<TwoFactorSetup> {
+  const response = await apiRequest<TwoFactorStartResponse>("/auth/two-factor/start", {
+    method: "POST",
+    body: { password } satisfies TwoFactorPasswordRequest,
+  });
+  const secret = response?.secret;
+  const otpauthUri = response?.otpauth_uri;
+  if (
+    typeof secret !== "string" ||
+    secret === "" ||
+    typeof otpauthUri !== "string" ||
+    !otpauthUri.startsWith("otpauth://totp/")
+  ) {
+    throw new ApiError("server", null, "The server sent an unexpected answer.");
+  }
+  return { secret, otpauthUri };
+}
+
+/** Turns it on; the codes are shown this once. The backend ends other sessions. */
+export async function confirmTwoFactor(password: string, code: string): Promise<string[]> {
+  return toRecoveryCodes(
+    await apiRequest<RecoveryCodesResponse>("/auth/two-factor/confirm", {
+      method: "POST",
+      body: { password, code } satisfies TwoFactorCodeRequest,
+    }),
+  );
+}
+
+/** The old codes stop working. The backend ends other sessions. */
+export async function replaceRecoveryCodes(
+  password: string,
+  code: string,
+): Promise<string[]> {
+  return toRecoveryCodes(
+    await apiRequest<RecoveryCodesResponse>("/auth/two-factor/recovery-codes", {
+      method: "POST",
+      body: { password, code } satisfies TwoFactorCodeRequest,
+    }),
+  );
+}
+
+/** Takes an app code or a recovery code. The backend ends other sessions. */
+export async function disableTwoFactor(password: string, code: string): Promise<void> {
+  await apiRequest<MessageResponse>("/auth/two-factor/disable", {
+    method: "POST",
+    body: { password, code } satisfies TwoFactorCodeRequest,
+  });
+}
+
+function toRecoveryCodes(response: RecoveryCodesResponse): string[] {
+  const codes: unknown = response?.recovery_codes;
+  if (
+    !Array.isArray(codes) ||
+    codes.length === 0 ||
+    !codes.every((code) => typeof code === "string" && code !== "")
+  ) {
+    throw new ApiError("server", null, "The server sent an unexpected answer.");
+  }
+  return codes;
+}
+
 /** 400, not 401: the session is still fine. */
 export function isWrongCurrentPasswordError(error: unknown): boolean {
   return (
@@ -200,4 +290,31 @@ export function isUsernameTakenError(error: unknown): boolean {
     error.kind === "conflict" &&
     error.message === USERNAME_TAKEN
   );
+}
+
+function isRefusal(error: unknown, kind: ApiErrorKind, message: string): boolean {
+  return isApiError(error) && error.kind === kind && error.message === message;
+}
+
+/** Also a code already used, or a wrong recovery code. */
+export function isInvalidCodeError(error: unknown): boolean {
+  return isRefusal(error, "bad_request", INVALID_CODE);
+}
+
+/** Expired, voided by wrong codes, or replaced by a newer login. */
+export function isInvalidLoginChallengeError(error: unknown): boolean {
+  return isRefusal(error, "bad_request", INVALID_LOGIN_CHALLENGE);
+}
+
+export function isTwoFactorAlreadyOnError(error: unknown): boolean {
+  return isRefusal(error, "conflict", TWO_FACTOR_ALREADY_ON);
+}
+
+export function isTwoFactorOffError(error: unknown): boolean {
+  return isRefusal(error, "bad_request", TWO_FACTOR_OFF);
+}
+
+/** The pending secret lasted an hour, or was never started. */
+export function isNoPendingTwoFactorError(error: unknown): boolean {
+  return isRefusal(error, "bad_request", NO_PENDING_TWO_FACTOR);
 }

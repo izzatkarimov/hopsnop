@@ -3,14 +3,17 @@
 import { useState } from "react";
 import { PasswordSection } from "./password-section";
 import { SessionsSection } from "./sessions-section";
+import { TwoFactorSection } from "./two-factor-section";
 
 export function SecuritySettings() {
-  // A password change ends other sessions; a new key reloads the list.
+  // Password and two-factor changes end other sessions; a new key reloads the list.
   const [sessionsKey, setSessionsKey] = useState(0);
+  const reloadSessions = () => setSessionsKey((key) => key + 1);
 
   return (
     <>
-      <PasswordSection onChanged={() => setSessionsKey((key) => key + 1)} />
+      <PasswordSection onChanged={reloadSessions} />
+      <TwoFactorSection onChanged={reloadSessions} />
       <SessionsSection key={sessionsKey} />
     </>
   );

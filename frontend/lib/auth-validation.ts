@@ -43,6 +43,39 @@ export function validateEmail(value: string): string | null {
   return null;
 }
 
+/** The backend's limit on a code as sent, spaces and dashes included. */
+export const TWO_FACTOR_CODE_MAX_LENGTH = 32;
+const APP_CODE_PATTERN = /^[0-9]{6}$/;
+// Shape only: the backend alone knows which letters its codes use.
+const RECOVERY_CODE_PATTERN = /^[0-9A-Z]{16}$/;
+
+/** As tidied() in app/core/two_factor.py tidies it. */
+function tidyCode(value: string): string {
+  return value.replace(/[ -]/g, "").toUpperCase();
+}
+
+/** A malformed code would still count as a wrong one, so it isn't sent. */
+export function validateAppCode(value: string): string | null {
+  const code = tidyCode(value);
+  if (code === "") return "Enter the code from your authenticator app.";
+  if (!APP_CODE_PATTERN.test(code) || value.length > TWO_FACTOR_CODE_MAX_LENGTH) {
+    return "Enter the 6 digits your authenticator app shows.";
+  }
+  return null;
+}
+
+export function validateAppOrRecoveryCode(value: string): string | null {
+  const code = tidyCode(value);
+  if (code === "") return "Enter a code from your authenticator app or a recovery code.";
+  if (
+    !(APP_CODE_PATTERN.test(code) || RECOVERY_CODE_PATTERN.test(code)) ||
+    value.length > TWO_FACTOR_CODE_MAX_LENGTH
+  ) {
+    return "Enter the 6 digits from your app, or a recovery code like ABCD-EFGH-JKMN-PQRS.";
+  }
+  return null;
+}
+
 /** Checked exactly as typed; never trimmed. */
 export function validateNewPassword(value: string): string | null {
   const length = countCharacters(value);

@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   PASSWORD_MAX_LENGTH,
   PASSWORD_MIN_LENGTH,
+  TWO_FACTOR_CODE_MAX_LENGTH,
   isUsername,
+  validateAppCode,
+  validateAppOrRecoveryCode,
   validateNewPassword,
 } from "./auth-validation";
 
@@ -55,4 +58,43 @@ describe("isUsername", () => {
       expect(isUsername(value)).toBe(false);
     },
   );
+});
+
+describe("validateAppCode", () => {
+  it.each(["123456", "123 456", "000000", "12-34-56"])("accepts %j, tidied as the backend tidies it", (value) => {
+    expect(validateAppCode(value)).toBeNull();
+  });
+
+  it.each(["", "   ", "--"])("asks for a code when given %j", (value) => {
+    expect(validateAppCode(value)).toBe("Enter the code from your authenticator app.");
+  });
+
+  it.each(["12345", "1234567", "12345a", "ABCD-EFGH-JKMN-PQRS", "１２３４５６"])("refuses %j", (value) => {
+    expect(validateAppCode(value)).toBe("Enter the 6 digits your authenticator app shows.");
+  });
+});
+
+describe("validateAppOrRecoveryCode", () => {
+  it.each(["123456", "ABCD-EFGH-JKMN-PQRS", "abcd efgh jkmn pqrs", "abcdefghjkmnpqrs"])("accepts %j", (value) => {
+    expect(validateAppOrRecoveryCode(value)).toBeNull();
+  });
+
+  it("asks for a code when there is none", () => {
+    expect(validateAppOrRecoveryCode(" ")).toBe(
+      "Enter a code from your authenticator app or a recovery code.",
+    );
+  });
+
+  it.each(["12345", "ABCD-EFGH-JKMN-PQR", "ABCD-EFGH-JKMN-PQRS-T", "ABCD_EFGH_JKMN_PQRS"])("refuses %j", (value) => {
+    expect(validateAppOrRecoveryCode(value)).toBe(
+      "Enter the 6 digits from your app, or a recovery code like ABCD-EFGH-JKMN-PQRS.",
+    );
+  });
+
+  it("refuses what the backend would refuse for its length, spaces included", () => {
+    expect(TWO_FACTOR_CODE_MAX_LENGTH).toBe(32);
+    const padded = "ABCD-EFGH-JKMN-PQRS".padEnd(32, " ");
+    expect(validateAppOrRecoveryCode(padded)).toBeNull();
+    expect(validateAppOrRecoveryCode(`${padded} `)).not.toBeNull();
+  });
 });

@@ -64,6 +64,49 @@ CSRF](../backend/README.md#cookie-and-csrf)). That requires the frontend and
 the API to be on the same site, for example `hopsnop.com` and
 `api.hopsnop.com`.
 
+## Two-factor login
+
+The API's [two-factor login](../backend/README.md#two-factor-login), with an
+authenticator app.
+
+**Logging in.** When `POST /auth/login` answers `202` with a challenge, the
+login form asks for a code on the same page, at the same address
+(`components/auth/two-factor-login-step.tsx`). One field takes the 6-digit
+code or a recovery code, so it has no `inputMode`: a numeric keypad couldn't
+type a recovery code. A wrong code keeps the step; an expired or voided
+challenge goes back to the password, which has to be typed again. A code of the
+wrong shape isn't sent, as it would only count as a wrong one.
+
+**Settings** (`components/settings/two-factor-section.tsx`) show whether it is
+on and how many recovery codes are left, with a warning at 3 or fewer. Turning
+it on asks for the password, then shows a QR code of the `otpauth://` URI and
+the same key as text, then asks for a code. Replacing the codes takes the
+password and a code from the app; turning it off takes the password, a code or
+a recovery code, and a confirmation. Each ends the other sessions, so the
+sessions list is loaded again.
+
+**Recovery codes** are shown once, with Copy and a `.txt` download made in the
+browser, and can be closed only once the user says they are saved.
+
+**Secrets.**
+
+- The login challenge is kept only in the login form's state and sent only to
+  the API: never in the address, storage, a cookie, the page or a log.
+- The password typed to turn it on is kept in the setup's state until the code
+  is confirmed, because `POST /auth/two-factor/confirm` needs it again. It is
+  never shown back, and goes when the setup ends: confirmed, cancelled, expired
+  or left.
+- The secret, the URI and the recovery codes live in the state of the step
+  that shows them and go when it closes. They are marked `translate="no"`, as a
+  browser's page translation would send them to a third party.
+- A page can only drop a string; JavaScript can't wipe it from memory. Whatever
+  the user copies stays on the clipboard.
+
+**The QR code** (`components/ui/qr-code.tsx`) is drawn in the browser with
+[`qr`](https://github.com/paulmillr/qr), which has no dependencies. Its module
+grid becomes one SVG `<path>`: no markup string, image address or inline
+style, so the CSP needed no change.
+
 ## Stories
 
 The row at the top of Home (`components/stories/`) shows the signed-in

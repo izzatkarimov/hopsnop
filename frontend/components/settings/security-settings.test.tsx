@@ -1,7 +1,8 @@
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { api, json } from "@/test/api";
+import { myProfile } from "@/test/fixtures";
 import { renderSignedIn } from "@/test/render";
 import { SecuritySettings } from "./security-settings";
 
@@ -22,6 +23,7 @@ describe("SecuritySettings", () => {
   it("loads the sessions again after a password change, as the backend has ended the others", async () => {
     api.on("GET", "/auth/sessions", json(200, [current, other]), json(200, [current]));
     api.on("POST", "/auth/change-password", json(200, { message: "Password has been changed." }));
+    api.on("GET", "/users/me", json(200, myProfile()));
     await renderSignedIn(<SecuritySettings />);
     const user = userEvent.setup();
     expect(await screen.findAllByRole("listitem")).toHaveLength(2);
@@ -35,6 +37,28 @@ describe("SecuritySettings", () => {
     expect(screen.getAllByRole("listitem")).toHaveLength(1);
     await waitFor(() => expect(api.calls("GET", "/auth/sessions")).toHaveLength(2));
     expect(api.calls("DELETE")).toEqual([]);
+    expect(api.calls("POST", "/auth/sessions/revoke-others")).toEqual([]);
+  });
+
+  it("loads the sessions again after two-factor login is turned off, as the backend has ended the others", async () => {
+    api.on("GET", "/auth/sessions", json(200, [current, other]), json(200, [current]));
+    api.on("GET", "/users/me", json(200, myProfile({ two_factor_enabled: true, recovery_codes_left: 10 })));
+    api.on("POST", "/auth/two-factor/disable", json(200, { message: "Two-factor login is off." }));
+    await renderSignedIn(<SecuritySettings />);
+    const user = userEvent.setup();
+    expect(await screen.findAllByRole("listitem")).toHaveLength(2);
+
+    await user.click(screen.getByRole("button", { name: "Turn off two-factor login" }));
+    const form = within(screen.getByRole("form", { name: "Turn off two-factor login" }));
+    await user.type(form.getByLabelText("Password"), "current password 1");
+    await user.type(form.getByLabelText("Code"), "123456");
+    await user.click(form.getByRole("checkbox", { name: "I understand that logging in will need only my password." }));
+    await user.click(form.getByRole("button", { name: "Turn off two-factor login" }));
+
+    expect(await screen.findByText("You aren't signed in anywhere else.")).toBeInTheDocument();
+    expect(screen.getByText("Two-factor login is off. Your other sessions have been signed out.")).toBeInTheDocument();
+    expect(screen.getAllByRole("listitem")).toHaveLength(1);
+    await waitFor(() => expect(api.calls("GET", "/auth/sessions")).toHaveLength(2));
     expect(api.calls("POST", "/auth/sessions/revoke-others")).toEqual([]);
   });
 });

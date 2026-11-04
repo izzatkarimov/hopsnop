@@ -1,5 +1,6 @@
+import type { LoginChallengeResponse, TwoFactorStartResponse } from "@/lib/auth";
 import type { PostAuthorResponse, PostPageResponse, PostResponse } from "@/lib/posts";
-import type { PublicProfileResponse } from "@/lib/profiles";
+import type { MyProfileResponse, PublicProfileResponse } from "@/lib/profiles";
 import type { StoryPageResponse, StoryResponse } from "@/lib/stories";
 import { account } from "./render";
 
@@ -103,3 +104,47 @@ export function story(
 export function storyPage(items: StoryResponse[], nextCursor: string | null = null): StoryPageResponse {
   return { items, next_cursor: nextCursor };
 }
+
+export function myProfile(extra: Partial<MyProfileResponse> = {}): MyProfileResponse {
+  return {
+    id: account.id,
+    username: account.username,
+    email: account.email,
+    display_name: account.display_name,
+    bio: null,
+    avatar_url: null,
+    email_verified_at: account.email_verified_at,
+    two_factor_enabled: false,
+    recovery_codes_left: 0,
+    followers_count: 3,
+    following_count: 1,
+    created_at: account.created_at,
+    ...extra,
+  };
+}
+
+/* Made-up secrets in the backend's formats; none of them opens anything. */
+
+export const LOGIN_CHALLENGE: LoginChallengeResponse = {
+  challenge: "ZmFrZS1jaGFsbGVuZ2UtZm9yLXRlc3RzLW9ubHktOWQ3YzJm",
+  expires_at: "2026-11-04T10:05:00.000000Z",
+};
+
+export const TWO_FACTOR_SETUP: TwoFactorStartResponse = {
+  secret: "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP",
+  otpauth_uri:
+    "otpauth://totp/Hopsnop:test_viewer?secret=JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP&issuer=Hopsnop&algorithm=SHA1&digits=6&period=30",
+};
+
+export const RECOVERY_CODES = [
+  "7K3M-Q9TX-2HVD-W8RP",
+  "B4NZ-6CJE-XR1T-5GQM",
+  "H2WF-8PKV-Z0AN-3DYS",
+  "M9QC-4TBR-7JXE-1VWK",
+  "R5GD-0YHN-6MSZ-8CPA",
+  "T1VX-3EQK-9BFW-2NJH",
+  "W6ZP-5RMA-4GTC-0KYD",
+  "X8JS-1NWD-3HQV-7EBF",
+  "Y0CT-9KGZ-5PRX-6MAJ",
+  "Z3EB-2VFY-8DNK-4WHS",
+];

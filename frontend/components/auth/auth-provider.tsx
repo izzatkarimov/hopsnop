@@ -22,7 +22,9 @@ export type AuthState =
   | { status: "error" };
 
 type AuthActions = {
-  logIn: (credentials: LoginRequest) => Promise<void>;
+  /** Null once signed in; a challenge when the account also needs a code. */
+  logIn: (credentials: LoginRequest) => Promise<{ challenge: string } | null>;
+  logInWithCode: (challenge: string, code: string) => Promise<void>;
   logOut: () => Promise<void>;
   retry: () => void;
   updateUser: (changes: Partial<Pick<User, "displayName" | "avatarUrl">>) => void;
@@ -60,11 +62,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     );
   }, [attempt]);
 
-  const logIn = useCallback(async (credentials: LoginRequest) => {
-    const user = await authApi.logIn(credentials);
+  const signIn = useCallback((user: User) => {
     latestChange.current++;
     setState({ status: "authenticated", user });
   }, []);
+
+  const logIn = useCallback(
+    async (credentials: LoginRequest) => {
+      const result = await authApi.logIn(credentials);
+      if (result.status === "two_factor") return { challenge: result.challenge };
+      signIn(result.user);
+      return null;
+    },
+    [signIn],
+  );
+
+  const logInWithCode = useCallback(
+    async (challenge: string, code: string) => {
+      signIn(await authApi.logInWithCode(challenge, code));
+    },
+    [signIn],
+  );
 
   const logOut = useCallback(async () => {
     try {
@@ -96,8 +114,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ ...state, logIn, logOut, retry, updateUser, expireSession }),
-    [state, logIn, logOut, retry, updateUser, expireSession],
+    () => ({ ...state, logIn, logInWithCode, logOut, retry, updateUser, expireSession }),
+    [state, logIn, logInWithCode, logOut, retry, updateUser, expireSession],
   );
 
   return <AuthContext value={value}>{children}</AuthContext>;

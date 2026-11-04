@@ -303,8 +303,6 @@ changed.
 - A code can be phished and relayed within its step. TOTP does not stop that.
 - The key is in the application's environment, so encryption protects against a
   copy of the database, not against someone on the server.
-- The web frontend does not take the second step yet, so an account with this on
-  can log in only through the API.
 
 ### Deleting an account
 

@@ -60,6 +60,17 @@ export type Story = {
   viewCount: number | null;
 };
 
+export type TwoFactorStatus = {
+  enabled: boolean;
+  recoveryCodesLeft: number;
+};
+
+/** The same secret twice: for the QR code, and for typing in by hand. */
+export type TwoFactorSetup = {
+  secret: string;
+  otpauthUri: string;
+};
+
 /** The backend records only start, last use and expiry: no device or location. */
 export type Session = {
   id: string;

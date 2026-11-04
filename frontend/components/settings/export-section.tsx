@@ -9,6 +9,7 @@ import { isApiError, unexpectedErrorMessage } from "@/lib/api";
 import { isWrongCurrentPasswordError } from "@/lib/auth";
 import { downloadAccountExport } from "@/lib/export";
 import type { AccountExportFile } from "@/lib/export";
+import { saveFile } from "@/lib/save-file";
 
 const PASSWORD_FIELD = "exportPassword";
 
@@ -24,19 +25,6 @@ const CONTENTS = [
 
 const outlineButtonClass =
   "rounded-full border border-border px-5 py-1.5 text-body font-semibold transition-colors hover:bg-hover disabled:cursor-not-allowed disabled:opacity-50";
-
-/** The URL is let go of once the browser has had time to start its own copy. */
-function saveFile(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename;
-  link.hidden = true;
-  document.body.append(link);
-  link.click();
-  link.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 30_000);
-}
 
 /** Password held only while typed; the export only in memory until saved. */
 export function ExportSection() {

@@ -1,6 +1,6 @@
 import { ApiError, apiRequest, isApiError } from "./api";
 import { isUsername } from "./auth-validation";
-import type { Profile, PublicProfile } from "./types";
+import type { Profile, PublicProfile, TwoFactorStatus } from "./types";
 
 type ProfileFields = {
   id: string;
@@ -73,6 +73,22 @@ function toProfile(response: ProfileFields): Profile {
 
 export async function getCurrentProfile(): Promise<Profile> {
   return toProfile(await apiRequest<MyProfileResponse>("/users/me"));
+}
+
+/** Only the two-factor fields; the rest of the private profile is left behind. */
+export async function getTwoFactorStatus(): Promise<TwoFactorStatus> {
+  const response = await apiRequest<MyProfileResponse>("/users/me");
+  const enabled = response?.two_factor_enabled;
+  const recoveryCodesLeft = response?.recovery_codes_left;
+  if (
+    typeof enabled !== "boolean" ||
+    typeof recoveryCodesLeft !== "number" ||
+    !Number.isInteger(recoveryCodesLeft) ||
+    recoveryCodesLeft < 0
+  ) {
+    throw new ApiError("server", null, "The server sent an unexpected profile.");
+  }
+  return { enabled, recoveryCodesLeft };
 }
 
 /** The backend rejects an empty set of changes: send at least one field. */
