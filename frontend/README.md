@@ -197,3 +197,19 @@ a request without one fails the test. They show that each component behaves
 correctly for every answer the API can give, including errors, rate limits
 and repeated clicks. They do not show that the frontend and the API work
 together; that is for end-to-end tests against a running backend.
+
+## Dependency audit
+
+`npm audit` reports one advisory, left open on purpose:
+[GHSA-g3hv-75wg-m249](https://github.com/advisories/GHSA-g3hv-75wg-m249), a
+denial of service through crafted glob patterns in `minimatch` 10. It comes
+in only with ESLint, a development dependency (`eslint-config-next` →
+`typescript-eslint` → `@typescript-eslint/typescript-estree`), and npm counts
+it once for each package on that path.
+
+It can't be reached here: `typescript-estree` matches globs only for
+`parserOptions.projectService.allowDefaultProject`, which our ESLint config
+doesn't set, and only against patterns from that config. The fix is in
+`minimatch` 11, which no `typescript-eslint` release accepts yet (November
+2026); the finding goes away with the first one that does. `npm audit fix
+--force` doesn't fix it: it would downgrade `eslint-config-next` to 15.
