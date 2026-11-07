@@ -1,0 +1,9 @@
+# next build would read .env.local and build its values into the pages.
+.env*
+node_modules
+.next
+coverage
+*.tsbuildinfo
+next-env.d.ts
+Dockerfile
+.dockerignore

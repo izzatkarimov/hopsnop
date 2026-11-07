@@ -1,0 +1,40 @@
+# TLS for every site, certificates from Let's Encrypt, renewed automatically.
+# No access log: client addresses and paths are not written anywhere (deploy/README.md).
+{
+	admin off
+	acme_ca https://acme-v02.api.letsencrypt.org/directory
+	# No HTTP/3, so the server needs TCP 80 and 443 only.
+	servers {
+		protocols h1 h2
+	}
+}
+
+# A year, every subdomain; no preload, which is hard to undo.
+(hsts) {
+	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+}
+
+{$SITE_DOMAIN} {
+	import hsts
+	reverse_proxy frontend:3000 {
+		# Holds requests through a restart instead of answering 502.
+		lb_try_duration 10s
+	}
+}
+
+www.{$SITE_DOMAIN} {
+	import hsts
+	redir https://{$SITE_DOMAIN}{uri} permanent
+}
+
+{$API_DOMAIN} {
+	import hsts
+	reverse_proxy api:8000 {
+		lb_try_duration 10s
+	}
+}
+
+# The container's healthcheck only; this port is not published.
+http://127.0.0.1:8080 {
+	respond "ok"
+}

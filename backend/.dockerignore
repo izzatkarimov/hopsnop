@@ -1,0 +1,7 @@
+# Only what the image copies; secrets and local state never enter the build.
+*
+!requirements.txt
+!alembic.ini
+!alembic/
+!app/
+**/__pycache__

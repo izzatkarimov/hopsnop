@@ -19,10 +19,16 @@ The API has to be running as well; see the [root README](../README.md).
 | --- | --- |
 | `NEXT_PUBLIC_API_URL` | Base URL of the API, e.g. `http://localhost:8000`. Built into the pages, so it is public: never put a secret in a `NEXT_PUBLIC_` variable |
 
+In the production image (`frontend/Dockerfile`, run by
+[`deploy/`](../deploy/README.md)) `NEXT_PUBLIC_API_URL` is a build argument,
+`https://api.` and the site's domain, and fixed for that image along with the
+CSP's API origin. `.env*` files never enter the image, and Next.js's telemetry
+is off (`NEXT_TELEMETRY_DISABLED`).
+
 | Command | What it does |
 | --- | --- |
 | `npm run dev` | Development server |
-| `npm run build`, `npm start` | Production build, and serving it |
+| `npm run build`, `npm start` | Production build, and serving it. The build is `standalone` (`.next/standalone/server.js` with only the traced `node_modules`), which `frontend/Dockerfile` runs; `npm start` still works but warns about it |
 | `npm run lint` | ESLint |
 | `npx next typegen && npx tsc --noEmit` | Type check, including the [API contract](#api-types) |
 | `npm test`, `npm run test:watch` | Unit and component tests (Vitest) |

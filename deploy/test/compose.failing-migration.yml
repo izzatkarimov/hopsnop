@@ -1,0 +1,8 @@
+# Local proof only: a migration that fails, and an API that would have to be
+# replaced. The old API must keep serving (deploy/test/README.md).
+services:
+  migrate:
+    command: ["python", "-c", "raise SystemExit('migration failed on purpose')"]
+  api:
+    environment:
+      PROOF_NEW_RELEASE: "1"

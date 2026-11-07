@@ -9,6 +9,7 @@ Enhanced User Data Protection* (Computer Engineering, Vistula University).
 | --- | --- | --- |
 | [`backend/`](backend) | FastAPI, SQLAlchemy and Alembic on PostgreSQL. Accounts, sessions, posts, follows, stories, data export, account deletion and retention | [backend/README.md](backend/README.md) |
 | [`frontend/`](frontend) | Next.js and React. Runs in the browser and talks to the API only | [frontend/README.md](frontend/README.md) |
+| [`deploy/`](deploy) | Production on one server with Docker Compose: Caddy (TLS, HSTS), migrations, the purge dry run, backups, and a local proof of all of it | [deploy/README.md](deploy/README.md) |
 
 ```
 browser ──► frontend (Next.js, :3000) ──► backend API (FastAPI, :8000) ──► PostgreSQL (:5433)

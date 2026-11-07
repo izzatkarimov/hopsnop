@@ -1,0 +1,10 @@
+[Unit]
+Description=Hourly Hopsnop retention purge
+
+[Timer]
+OnCalendar=*-*-* *:15:00 UTC
+# Runs once after boot if an hour was missed while the server was off.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

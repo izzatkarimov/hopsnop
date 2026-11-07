@@ -1,0 +1,171 @@
+# Hopsnop in production on one host: PostgreSQL, the API, the frontend and
+# Caddy. Settings come from deploy/.env (.env.example); deploy/README.md says
+# how to run it. Only Caddy publishes ports, and only 80 and 443.
+name: hopsnop
+
+x-hardening: &hardening
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  logging:
+    driver: local
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+# The API, its migrations and the purge: one image and the same settings.
+x-backend: &backend
+  <<: *hardening
+  image: hopsnop-api:latest
+  env_file: ${HOPSNOP_ENV_FILE:-.env}
+  environment: &backend-environment
+    ENVIRONMENT: production
+    DATABASE_URL: postgresql+psycopg://hopsnop:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}@postgres:5432/hopsnop
+    FRONTEND_URL: https://${SITE_DOMAIN:?set SITE_DOMAIN in deploy/.env}
+    IMAGE_STORAGE_PATH: /data/media
+  tmpfs:
+    - /tmp
+
+services:
+  postgres:
+    <<: *hardening
+    image: postgres:17.11-trixie@sha256:ff87138949ad9a46f32ff23bd6852b52ce024a13dffe9b4087be98292cdd3b4f
+    user: postgres
+    environment:
+      POSTGRES_DB: hopsnop
+      POSTGRES_USER: hopsnop
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    tmpfs:
+      - /var/run/postgresql
+      - /tmp
+    shm_size: 128mb
+    networks: [db]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "hopsnop", "-d", "hopsnop"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # Runs to the end before an API starts. deploy.sh also runs it on its own first,
+  # so that a failing migration leaves the running API in place.
+  migrate:
+    <<: *backend
+    command: ["alembic", "upgrade", "head"]
+    pull_policy: never
+    networks: [db]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    <<: *backend
+    build: ../backend
+    environment:
+      <<: *backend-environment
+      # Caddy's address below: the only sender whose X-Forwarded-For is believed.
+      FORWARDED_ALLOW_IPS: 172.31.253.2
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-2}
+    volumes:
+      - images:/data/media
+    # edge also lets the API reach Resend.
+    networks: [db, edge]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  frontend:
+    <<: *hardening
+    build:
+      context: ../frontend
+      args:
+        NEXT_PUBLIC_API_URL: https://${API_DOMAIN:?set API_DOMAIN in deploy/.env}
+    image: hopsnop-frontend:latest
+    tmpfs:
+      - /tmp
+    networks: [front]
+    restart: unless-stopped
+
+  caddy:
+    <<: *hardening
+    build: ./caddy
+    image: hopsnop-caddy:latest
+    environment:
+      SITE_DOMAIN: ${SITE_DOMAIN:?set SITE_DOMAIN in deploy/.env}
+      API_DOMAIN: ${API_DOMAIN:?set API_DOMAIN in deploy/.env}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+    tmpfs:
+      - /tmp
+    networks:
+      edge:
+        ipv4_address: 172.31.253.2
+      front: {}
+    depends_on:
+      api:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Hourly from hopsnop-purge.timer. A dry run, and the pictures are read-only to it.
+  purge:
+    <<: *backend
+    profiles: [tools]
+    command: ["python", "-m", "app.purge"]
+    pull_policy: never
+    volumes:
+      - images:/data/media:ro
+    networks: [db]
+    restart: "no"
+
+  # backup.sh and restore.sh: the pictures as a tar stream on stdout and stdin.
+  backup-images:
+    <<: *hardening
+    image: hopsnop-api:latest
+    profiles: [tools]
+    entrypoint: ["tar", "-C", "/data/media", "-czf", "-", "."]
+    pull_policy: never
+    volumes:
+      - images:/data/media:ro
+    network_mode: none
+    restart: "no"
+
+  restore-images:
+    <<: *hardening
+    image: hopsnop-api:latest
+    profiles: [tools]
+    entrypoint: ["tar", "-C", "/data/media", "-xzf", "-"]
+    pull_policy: never
+    volumes:
+      - images:/data/media
+    network_mode: none
+    restart: "no"
+
+networks:
+  # No way out: only the containers on it can reach the database.
+  db:
+    internal: true
+  # Caddy and the frontend; the frontend needs nothing else.
+  front:
+    internal: true
+  edge:
+    ipam:
+      config:
+        - subnet: 172.31.253.0/24
+          # Others get addresses from here, so none can take Caddy's .2 first.
+          ip_range: 172.31.253.128/25
+
+volumes:
+  postgres_data: {}
+  images: {}
+  caddy_data: {}
+  caddy_config: {}

@@ -163,6 +163,11 @@ whatever terminates TLS; the Content-Security-Policy of the pages belongs to
 the frontend; and the server has to be told the client's address by the proxy
 in front of it (see [rate limiting](#rate-limiting)).
 
+[`deploy/`](../deploy/README.md) does all three for a production on one
+server: Caddy terminates TLS and sets HSTS, the frontend's image keeps its CSP,
+and uvicorn believes `X-Forwarded-For` from Caddy's address only
+(`FORWARDED_ALLOW_IPS`). The API's image is `backend/Dockerfile`.
+
 ## Authentication
 
 Database-backed sessions carried in an `HttpOnly` cookie. There are no JWTs and
@@ -1938,7 +1943,8 @@ on how the application gets them:
   with `/etc/hopsnop/backend.env` owned by that user and mode `600`.
 - **From the platform** (container or orchestrator environment). Run the
   command as a scheduled job of the same image with the same environment
-  and secrets attached.
+  and secrets attached. That is how [`deploy/`](../deploy/README.md#retention-purge)
+  runs it: hourly, in the API's image with the API's settings, as a dry run.
 
 No setting is written into the crontab itself, where it would be a second
 copy to keep in step, and readable by more people.

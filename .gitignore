@@ -1,2 +1,5 @@
 # macOS folder metadata, wherever Finder writes it
 .DS_Store
+
+# Production settings and secrets, made from deploy/.env.example
+deploy/.env

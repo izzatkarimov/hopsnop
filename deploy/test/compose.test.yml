@@ -1,0 +1,35 @@
+# Local proof only (deploy/test/README.md), on top of deploy/compose.yml:
+# account email goes to a fake Resend on this machine, never to api.resend.com.
+services:
+  api:
+    extra_hosts:
+      - "api.resend.com:172.31.253.53"
+    environment:
+      # Trusted for the fake's certificate; replaces every other CA in this container.
+      SSL_CERT_FILE: /run/fake-resend/ca.pem
+    volumes:
+      - ${FAKE_RESEND_CERTS:?run deploy/test/run.sh}/ca.pem:/run/fake-resend/ca.pem:ro
+    depends_on:
+      fake-resend:
+        condition: service_healthy
+
+  fake-resend:
+    image: hopsnop-api:latest
+    pull_policy: never
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    entrypoint: ["python", "/srv/fake_resend.py"]
+    environment:
+      EXPECTED_API_KEY: ${RESEND_API_KEY:?run deploy/test/run.sh}
+    volumes:
+      # Relative to deploy/, the directory of the first compose file.
+      - ./test/fake_resend.py:/srv/fake_resend.py:ro
+      - ${FAKE_RESEND_CERTS}:/run/fake-resend:ro
+    networks:
+      edge:
+        ipv4_address: 172.31.253.53
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 443), 2)"]
+      interval: 2s
+      retries: 30
