@@ -31,7 +31,7 @@ docker compose up -d
 cp .env.example .env                  # once
 python3 -m venv .venv                 # once
 source .venv/bin/activate
-pip install -r requirements-dev.txt   # once, and after requirements change
+pip install --require-hashes -r requirements-dev.txt   # once, and after requirements change
 alembic upgrade head
 uvicorn app.main:app --reload
 ```

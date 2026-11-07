@@ -7,10 +7,32 @@ FastAPI backend for Hopsnop, a secure social media platform.
 ```bash
 cp .env.example .env
 docker compose up -d                      # PostgreSQL on localhost:5433
-pip install -r requirements-dev.txt       # runtime + test dependencies
+pip install --require-hashes -r requirements-dev.txt   # runtime + test dependencies
 alembic upgrade head                      # create the schema
 uvicorn app.main:app --reload
 ```
+
+## Dependencies
+
+Only `requirements.in` and `requirements-dev.in` are edited by hand: the
+direct dependencies, pinned exactly. `requirements.txt` and
+`requirements-dev.txt` are generated from them by uv (installed with the dev
+requirements). They list every package, indirect ones too, at one version and
+with the hash of each of its files, for every platform; markers skip what a
+platform doesn't need. With `--require-hashes`, pip installs exactly that set
+or fails.
+
+After changing an `.in` file:
+
+```bash
+uv pip compile requirements.in --universal --generate-hashes --python-version 3.12 -o requirements.txt
+uv pip compile requirements-dev.in -c requirements.txt --universal --generate-hashes --python-version 3.12 -o requirements-dev.txt
+```
+
+Every other package keeps the version already in the file, and `-c
+requirements.txt` keeps the two files identical where they overlap. To move
+one indirect package, add `--upgrade-package starlette` (or
+`starlette==1.10.0`) to both commands. Then run the tests again.
 
 ## Database
 

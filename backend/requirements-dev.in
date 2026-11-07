@@ -1,0 +1,6 @@
+-r requirements.in
+
+pytest==9.1.1
+
+# Generates requirements.txt and requirements-dev.txt (README, Dependencies).
+uv==0.13.5

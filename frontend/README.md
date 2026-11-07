@@ -175,6 +175,12 @@ refuses the camera, microphone, location, payment and USB. No
 `Strict-Transport-Security` belongs to whatever terminates TLS in
 production, as for the API.
 
+**No image optimizer.** Nothing uses `next/image`, yet `next start` would
+still fetch and decode any same-origin path at `/_next/image?url=…`, the
+endpoint of [GHSA-2464-fhr4-w9xw](https://github.com/advisories/GHSA-2464-fhr4-w9xw).
+`images.unoptimized` in `next.config.ts` makes it answer `404` to every
+request before it fetches anything.
+
 ## API types
 
 The response and request types in `lib/` are written by hand, with what each
@@ -213,3 +219,7 @@ doesn't set, and only against patterns from that config. The fix is in
 `minimatch` 11, which no `typescript-eslint` release accepts yet (November
 2026); the finding goes away with the first one that does. `npm audit fix
 --force` doesn't fix it: it would downgrade `eslint-config-next` to 15.
+
+`vite` is listed only so that the `"$vite"` override holds vitest's copy at
+`^7.3.7`, the first release without
+[GHSA-rq7h-c2jc-7f22](https://github.com/advisories/GHSA-rq7h-c2jc-7f22) and four others.

@@ -3,6 +3,8 @@ import { staticSecurityHeaders } from "./lib/security-headers";
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  // Nothing uses next/image; this makes /_next/image a 404 that fetches and decodes nothing.
+  images: { unoptimized: true },
   headers() {
     return [
       {
