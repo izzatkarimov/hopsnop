@@ -8,3 +8,9 @@ it("turns the image optimizer off", () => {
 it("builds a standalone server for the container", () => {
   expect(nextConfig.output).toBe("standalone");
 });
+
+it("leaves sharp and libvips out of the standalone server", () => {
+  expect(nextConfig.outputFileTracingExcludes?.["*"]).toEqual(
+    expect.arrayContaining(["**/node_modules/sharp/**", "**/node_modules/@img/**"]),
+  );
+});

@@ -1,8 +1,8 @@
 # The API, for production (deploy/compose.yml). Settings come from the
 # environment at run time; nothing secret is in any layer.
 
-# Python 3.12.15, Debian 13; the digest pins the exact build.
-FROM python:3.12.15-slim-trixie@sha256:a0f57064cbdcd6285fa45f51237ab0b35ea8ebaed06a1f5973e89e19dfb86704 AS build
+# Python 3.12.16, Debian 13; the digest pins the exact build.
+FROM python:3.12.16-slim-trixie@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b AS build
 
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PIP_NO_CACHE_DIR=1
@@ -14,7 +14,7 @@ RUN /opt/venv/bin/pip install --require-hashes -r /tmp/requirements.txt \
     && /opt/venv/bin/pip check
 
 
-FROM python:3.12.15-slim-trixie@sha256:a0f57064cbdcd6285fa45f51237ab0b35ea8ebaed06a1f5973e89e19dfb86704
+FROM python:3.12.16-slim-trixie@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b
 
 ENV PATH=/opt/venv/bin:$PATH \
     PYTHONDONTWRITEBYTECODE=1 \

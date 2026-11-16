@@ -130,6 +130,9 @@ s.on('connect', () => process.exit(1));"
 check "the frontend has no way out" docker compose exec -T frontend node -e "
 fetch('https://example.com', { signal: AbortSignal.timeout(5000) }).then(() => process.exit(1), () => process.exit(0))"
 
+echo "No image library in the frontend"
+check "hopsnop-frontend:latest: no sharp or libvips files" test -z "$(docker run --rm --user root --entrypoint find hopsnop-frontend:latest / -xdev \( -iname '*sharp*' -o -iname '*vips*' \) 2> /dev/null)"
+
 echo "No secrets in the images"
 for image in hopsnop-api:latest hopsnop-frontend:latest hopsnop-caddy:latest; do
   check "$image: no .env file" test -z "$(docker run --rm --entrypoint find "$image" / -xdev -name '.env*' 2> /dev/null)"

@@ -185,7 +185,9 @@ production, as for the API.
 still fetch and decode any same-origin path at `/_next/image?url=…`, the
 endpoint of [GHSA-2464-fhr4-w9xw](https://github.com/advisories/GHSA-2464-fhr4-w9xw).
 `images.unoptimized` in `next.config.ts` makes it answer `404` to every
-request before it fetches anything.
+request before it fetches anything. `outputFileTracingExcludes` keeps sharp
+and its libvips out of `.next/standalone`, so the container has neither; the
+server only loads sharp to optimize an image, which it never does.
 
 ## API types
 

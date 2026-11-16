@@ -7,6 +7,10 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   // Nothing uses next/image; this makes /_next/image a 404 that fetches and decodes nothing.
   images: { unoptimized: true },
+  // So sharp and its libvips stay out of the container; nothing loads them with the optimizer off.
+  outputFileTracingExcludes: {
+    "*": ["**/node_modules/sharp/**", "**/node_modules/@img/**"],
+  },
   headers() {
     return [
       {

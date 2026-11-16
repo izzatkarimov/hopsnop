@@ -27,7 +27,8 @@ What it checks, in order:
    root, read-only, no capabilities, `no-new-privileges`; migrations done
    before the API started; only Caddy publishing ports, TCP 80 and 443;
    PostgreSQL unreachable from the host, from Caddy and from the frontend; the
-   frontend with no way out; no `.env` file and no secret in any image layer.
+   frontend with no way out; no sharp or libvips file in the frontend image;
+   no `.env` file and no secret in any image layer.
 2. **End to end** (`e2e.sh`), through Caddy: the pages' headers and CSP nonce,
    the `www` and `http://` redirects, the API's headers and CORS; register,
    the emailed link, verify, log in (the `__Host-` cookie), a post, an avatar;
