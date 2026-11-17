@@ -2,15 +2,17 @@
 
 import { Suspense, useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import Link from "next/link";
+import { Button } from "@/components/ui/button";
+import { Field } from "@/components/ui/field";
+import { IconUser } from "@/components/ui/icons";
 import { Notice } from "@/components/ui/notice";
-import { TextField } from "@/components/ui/text-field";
+import { TextLink } from "@/components/ui/text-link";
 import { isApiError, unexpectedErrorMessage } from "@/lib/api";
 import { isEmailNotVerifiedError } from "@/lib/auth";
 import { useAuth } from "./auth-provider";
+import { AuthCard, AuthHeading } from "./auth-screen";
 import { PasswordField } from "./password-field";
 import { PasswordResetNotice } from "./password-reset-notice";
-import { primaryActionClass, textLinkClass } from "./styles";
 import { TwoFactorLoginStep } from "./two-factor-login-step";
 
 type Failure =
@@ -88,63 +90,63 @@ export function LoginForm() {
   }
 
   return (
-    // method="post": before JS loads, GET would put the password in the URL.
-    <form
-      method="post"
-      noValidate
-      onSubmit={handleSubmit}
-      className="flex flex-col gap-4"
-    >
-      <h1
-        ref={headingRef}
-        tabIndex={-1}
-        className="text-2xl font-semibold tracking-tight"
+    <AuthCard note>
+      {/* method="post": before JS loads, GET would put the password in the URL. */}
+      <form
+        method="post"
+        noValidate
+        onSubmit={handleSubmit}
+        className="flex flex-col gap-6"
       >
-        Log in to Hopsnop
-      </h1>
+        <AuthHeading
+          title="Welcome back"
+          description="Log in to see what your people are sharing."
+          headingRef={headingRef}
+        />
 
-      {/* Reads the URL, browser-only; its boundary lets the rest prerender. */}
-      <Suspense fallback={null}>
-        <PasswordResetNotice />
-      </Suspense>
-      {failure && <FailureNotice failure={failure} />}
+        {/* Reads the URL, browser-only; its boundary lets the rest prerender. */}
+        <Suspense fallback={null}>
+          <PasswordResetNotice />
+        </Suspense>
+        {failure && <FailureNotice failure={failure} />}
 
-      <TextField
-        label="Username or email"
-        name="identifier"
-        value={identifier}
-        onChange={(event) => setIdentifier(event.target.value)}
-        autoComplete="username"
-        autoCapitalize="none"
-        spellCheck={false}
-        required
-      />
-      <PasswordField
-        label="Password"
-        name="password"
-        value={password}
-        onChange={(event) => setPassword(event.target.value)}
-        autoComplete="current-password"
-        required
-      />
+        {/* Neither field is marked on a failed login: that would say which one was wrong. */}
+        <div className="flex flex-col gap-4">
+          <Field
+            label="Username or email"
+            name="identifier"
+            prefix={<IconUser />}
+            value={identifier}
+            onChange={(event) => setIdentifier(event.target.value)}
+            autoComplete="username"
+            autoCapitalize="none"
+            spellCheck={false}
+            required
+          />
+          <PasswordField
+            label="Password"
+            name="password"
+            labelAction={
+              <TextLink href="/forgot-password" className="text-meta">
+                Forgot password?
+              </TextLink>
+            }
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            autoComplete="current-password"
+            required
+          />
+        </div>
 
-      <button type="submit" disabled={submitting} className={primaryActionClass}>
-        {submitting ? "Logging in…" : "Log in"}
-      </button>
+        <Button type="submit" variant="primary" size="lg" disabled={submitting}>
+          {submitting ? "Logging in…" : "Log in"}
+        </Button>
 
-      <p className="text-center text-sm">
-        <Link href="/forgot-password" className={textLinkClass}>
-          Forgot password?
-        </Link>
-      </p>
-
-      <p className="text-center text-sm text-muted">
-        New to Hopsnop?{" "}
-        <Link href="/register" className={textLinkClass}>
-          Create an account
-        </Link>
-      </p>
-    </form>
+        <p className="text-center text-body text-secondary">
+          New to Hopsnop? <TextLink href="/register">Create an account</TextLink>
+        </p>
+      </form>
+    </AuthCard>
   );
 }
 
@@ -172,16 +174,16 @@ function FailureNotice({ failure }: { failure: Failure }) {
       );
     case "credentials":
       return (
-        <Notice tone="error">Incorrect username, email or password.</Notice>
+        <Notice tone="error" title="Incorrect username, email or password.">
+          Check them and try again, or reset your password.
+        </Notice>
       );
     case "unverified":
       return (
         <Notice tone="info">
           Your email address isn&apos;t verified yet. Open the link we emailed
           you, or{" "}
-          <Link href="/verify-email" className={textLinkClass}>
-            request a new verification link
-          </Link>
+          <TextLink href="/verify-email">request a new verification link</TextLink>
           .
         </Notice>
       );

@@ -4,7 +4,7 @@ import { useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { Notice } from "@/components/ui/notice";
-import { TextAreaField, TextField } from "@/components/ui/text-field";
+import { Field, TextAreaField } from "@/components/ui/field";
 import { isApiError, unexpectedErrorMessage } from "@/lib/api";
 import { validateDisplayName } from "@/lib/auth-validation";
 import { countCharacters } from "@/lib/posts";
@@ -226,7 +226,7 @@ export function EditProfileForm({
         disabled={submitting}
       />
 
-      <TextField
+      <Field
         label="Display name"
         autoComplete="name"
         autoFocus

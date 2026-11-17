@@ -39,7 +39,7 @@ is off (`NEXT_TELEMETRY_DISABLED`).
 | Path | What is there |
 | --- | --- |
 | `app/(auth)/` | Register, log in and forgot password, for signed-out visitors only; verify email and reset password, which a link can open for anyone |
-| `app/(main)/` | Home (stories and the feed), explore, own profile, settings. Only for signed-in users |
+| `app/(main)/` | Home (stories and the feed), search (by exact username), own profile, settings. Only for signed-in users |
 | `app/(public)/` | A single post with its replies, and a user's public profile. For everyone |
 | `components/` | The UI, by area; each component's tests sit next to it |
 | `lib/` | API calls and their types, validation, formatting, security headers |
@@ -49,6 +49,61 @@ is off (`NEXT_TELEMETRY_DISABLED`).
 Every page is rendered on the server for the request it answers and then
 runs in the browser. All data is fetched from the browser, straight from the
 API, with the session cookie (`lib/api.ts`).
+
+## Design system
+
+A dark theme made of tokens in `app/globals.css` and a few components in
+`components/ui/`. Tailwind CSS generates the classes; there is no UI library.
+
+**Tokens.** The palette is a set of CSS variables on `:root`, mapped into
+Tailwind's theme, so a light theme would only have to redefine those variables.
+
+| Kind | Classes |
+| --- | --- |
+| Surfaces | `bg-bg` (the page, `#0f0e0e`), `bg-tile`, `bg-well`, and the utilities `surface-shell`, `surface-tile`, `surface-well`, `surface-raised`, `surface-glass`, `surface-primary`, `surface-danger`, which add each surface's border, highlight and shadow |
+| Text | `text-primary`, `text-secondary`, `text-muted` |
+| Colours | `ink` (links, focus, blue text), `accent` (primary buttons only, never text), `like`, `success`, `warning`, `mention`, `danger`, `danger-solid` (destructive buttons), `edge` (borders and hairlines, used at 4 to 12%), `highlight` |
+| Type | `text-meta` 12/16, `text-body` 16/24, `text-control` 16/20, `text-lead` 20/28, `text-title` 24/32, `text-display` 28/36, in Bricolage Grotesque; `font-mono` (JetBrains Mono) only for recovery codes and the two-factor key. Both are loaded with `next/font` |
+| Radii | `rounded-chip` 8, `rounded-item` 12, `rounded-field` 16, `rounded-tile` 24, `rounded-shell` 32; buttons and pills `rounded-full` |
+| Shadows | `shadow-shell`, `shadow-raised`, `shadow-primary`, `shadow-danger`, `inset-shadow-well` |
+| Widths | Tailwind's breakpoints, plus `wide` (1100px); `max-w-main` (640px) for the page column |
+
+- Spacing follows a 4px grid. Borders are inset rings, so a 1px border never
+  changes an element's size, and tiles sit 8px inside a shell, so their
+  corners stay concentric.
+- Every control shows `focus-ring` when focused from the keyboard: an `ink`
+  border and a 4px `accent` ring. Anything else focusable gets an `ink` outline.
+- The dotted page background (`dot-grid`) and the glow behind the sign-in card
+  (`glow`) are CSS gradients: no image is loaded.
+- Transitions run only with `motion-safe:`, so they stop for anyone who asks
+  for reduced motion.
+- The older colour names (`background`, `foreground`, `border`, `hover`,
+  `accent-hover`, `accent-foreground`) still map onto the palette, for screens
+  that don't use these components yet.
+
+**Components** (`components/ui/`):
+
+| Component | What it does |
+| --- | --- |
+| `Button`, `ButtonLink` | Primary, secondary, ghost or danger; 36 or 48px tall; an optional leading icon. A button is `type="button"` unless told otherwise |
+| `IconButton` | A button with only an icon; its `label` is required and is its accessible name |
+| `Field`, `TextAreaField` | Label, hint, error, prefix and a trailing slot. An error replaces the hint, sets `aria-invalid` and is linked with `aria-describedby`. `appearance="code"` is for one-time codes |
+| `Checkbox` | A native checkbox with a label, a hint and an error |
+| `Card` | A `shell` holding `tile`s |
+| `SegmentedControl` | Tabs, with the WAI-ARIA keyboard behaviour |
+| `Avatar` | A picture from the API or the initials; optionally a story ring |
+| `Dialog` | A modal `<dialog>`, named by its title. Tab stays inside it, Escape or Cancel closes it, the page behind it doesn't scroll, and focus goes back to what opened it |
+| `Notice` | An error (`role="alert"`) or information (`role="status"`), with an optional title |
+| `IconBadge`, `TextLink`, `Wordmark` | The round icon above a sign-in card's heading, a link in running text, the logo |
+| `icons.tsx` | Outline icons on a 24-unit grid, drawn 2px wide from 20px and 1.5px below, with filled versions for the current page and other "on" states. Only icons in use are included |
+
+**The app shell** (`components/layout/`). From 1024px: a 240px sidebar with
+the navigation, New post, the signed-in user and Log out; the page in a 640px
+column; and from 1100px a 240px panel on the right, which shrinks the column
+rather than overflow. Between 640 and 1024px the sidebar is a 72px rail of
+icons. Below 640px there is a top bar with Settings and a floating bar at the
+bottom with Home, Search, New post and Profile. New post opens the composer on
+Home, from any page.
 
 ## Sessions
 

@@ -2,9 +2,12 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import { Button, ButtonLink } from "@/components/ui/button";
+import { IconBadge } from "@/components/ui/icon-badge";
+import { IconArrowLeft, IconKey, IconWarning } from "@/components/ui/icons";
 import { Notice } from "@/components/ui/notice";
+import { TextLink } from "@/components/ui/text-link";
 import { isApiError, unexpectedErrorMessage } from "@/lib/api";
 import { resetPassword } from "@/lib/auth";
 import {
@@ -12,10 +15,17 @@ import {
   validateNewPassword,
 } from "@/lib/auth-validation";
 import { useAuth } from "./auth-provider";
-import { AuthScreen } from "./auth-screen";
+import { AuthCard, AuthHeading, AuthScreen } from "./auth-screen";
 import { PasswordField } from "./password-field";
 import { LOGIN_AFTER_PASSWORD_RESET } from "./password-reset-notice";
-import { primaryActionClass, textLinkClass } from "./styles";
+
+const keyBadge = <IconBadge tone="warning" icon={<IconKey size={32} />} />;
+
+const backToLogIn = (
+  <ButtonLink href="/login" variant="ghost" icon={<IconArrowLeft />} className="self-center">
+    Back to log in
+  </ButtonLink>
+);
 
 const PASSWORD_FIELD = "newPassword";
 
@@ -118,91 +128,79 @@ export function ResetPassword() {
   switch (phase) {
     case "missing":
       return (
-        <AuthScreen title="Reset your password">
-          <p className="text-muted">
-            To choose a new password, open the link in the password reset
-            email we sent you. If you don&apos;t have one, or it no longer
-            works, request a new link.
-          </p>
-          <Link href="/forgot-password" className={primaryActionClass}>
+        <AuthScreen
+          badge={keyBadge}
+          title="Reset your password"
+          description="To choose a new password, open the link in the password reset email we sent you. If you don't have one, or it no longer works, request a new link."
+        >
+          <ButtonLink href="/forgot-password" variant="primary" size="lg">
             Request a new link
-          </Link>
-          <p className="text-center text-sm text-muted">
-            <Link href="/login" className={textLinkClass}>
-              Back to log in
-            </Link>
-          </p>
+          </ButtonLink>
+          {backToLogIn}
         </AuthScreen>
       );
 
     case "invalid":
       return (
-        <AuthScreen title="This link didn't work">
+        <AuthScreen
+          badge={<IconBadge tone="danger" icon={<IconWarning size={32} />} />}
+          title="This link didn't work"
+        >
           <Notice tone="error">
             The password reset link is invalid or has expired.
           </Notice>
-          <p className="text-muted">
+          <p className="text-body text-secondary">
             A reset link works only once and for a limited time, and only the
             most recent one we sent you is valid. If you have already chosen
             a new password with this link, you can{" "}
-            <Link href="/login" className={textLinkClass}>
-              log in
-            </Link>{" "}
-            with it. Otherwise, request a new link.
+            <TextLink href="/login">log in</TextLink> with it. Otherwise,
+            request a new link.
           </p>
-          <Link href="/forgot-password" className={primaryActionClass}>
+          <ButtonLink href="/forgot-password" variant="primary" size="lg">
             Request a new link
-          </Link>
+          </ButtonLink>
         </AuthScreen>
       );
 
     case "choosing":
       return (
-        // method="post": before JS loads, GET would put the password in the URL.
-        <form
-          method="post"
-          noValidate
-          onSubmit={handleSubmit}
-          className="flex flex-col gap-4"
-        >
-          <h1 className="text-2xl font-semibold tracking-tight">
-            Choose a new password
-          </h1>
-          <p className="text-muted">
-            Once your password is reset, you&apos;ll be logged out on all
-            devices.
-          </p>
-
-          {formError && <Notice tone="error">{formError}</Notice>}
-
-          <PasswordField
-            label="New password"
-            name={PASSWORD_FIELD}
-            hint={`At least ${PASSWORD_MIN_LENGTH} characters.`}
-            value={password}
-            error={passwordError}
-            onChange={(event) => {
-              setPassword(event.target.value);
-              setPasswordError(null);
-            }}
-            autoComplete="new-password"
-            required
-          />
-
-          <button
-            type="submit"
-            disabled={submitting}
-            className={primaryActionClass}
+        <AuthCard>
+          {/* method="post": before JS loads, GET would put the password in the URL. */}
+          <form
+            method="post"
+            noValidate
+            onSubmit={handleSubmit}
+            className="flex flex-col gap-6"
           >
-            {submitting ? "Resetting password…" : "Reset password"}
-          </button>
+            <AuthHeading
+              badge={keyBadge}
+              title="Choose a new password"
+              description="Once your password is reset, you'll be logged out on all devices."
+            />
 
-          <p className="text-center text-sm text-muted">
-            <Link href="/login" className={textLinkClass}>
-              Back to log in
-            </Link>
-          </p>
-        </form>
+            {formError && <Notice tone="error">{formError}</Notice>}
+
+            <PasswordField
+              label="New password"
+              name={PASSWORD_FIELD}
+              hint={`At least ${PASSWORD_MIN_LENGTH} characters.`}
+              value={password}
+              error={passwordError}
+              onChange={(event) => {
+                setPassword(event.target.value);
+                setPasswordError(null);
+              }}
+              autoComplete="new-password"
+              required
+            />
+
+            <Button type="submit" variant="primary" size="lg" disabled={submitting}>
+              {submitting ? "Resetting password…" : "Reset password"}
+            </Button>
+
+            {backToLogIn}
+          </form>
+        </AuthCard>
       );
   }
 }

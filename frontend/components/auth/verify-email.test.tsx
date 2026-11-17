@@ -67,7 +67,7 @@ describe("VerifyEmail", () => {
   it("says an email may be on its way when opened without a link, and sends nothing", () => {
     render(<VerifyEmail />);
 
-    expect(screen.getByRole("heading", { name: "Check your email" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Check your inbox" })).toBeInTheDocument();
     expect(
       screen.getByText("If your address can be used, we've sent you an email. Follow what it says to finish."),
     ).toBeInTheDocument();
@@ -119,5 +119,25 @@ describe("Asking for a new verification link", () => {
     await user.click(submit);
 
     await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("Something went wrong. Please try again."));
+  });
+});
+
+describe("VerifyEmail: waiting for the email", () => {
+  it("gives tips without naming an address or a lifetime it can't know", () => {
+    render(<VerifyEmail />);
+
+    const tips = screen.getAllByRole("listitem").map((item) => item.textContent);
+    expect(tips).toEqual([
+      "The link works only for a limited time.",
+      "Nothing there? Check your spam folder.",
+    ]);
+    expect(document.body).not.toHaveTextContent("@");
+    expect(document.body).not.toHaveTextContent(/hours/);
+  });
+
+  it("leads back to the login page", () => {
+    render(<VerifyEmail />);
+
+    expect(screen.getByRole("link", { name: "Back to log in" })).toHaveAttribute("href", "/login");
   });
 });

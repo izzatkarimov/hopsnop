@@ -2,12 +2,13 @@
 
 import { useState } from "react";
 import type { FormEvent } from "react";
+import { Button } from "@/components/ui/button";
+import { Field } from "@/components/ui/field";
+import { IconMail } from "@/components/ui/icons";
 import { Notice } from "@/components/ui/notice";
-import { TextField } from "@/components/ui/text-field";
 import { isApiError, unexpectedErrorMessage } from "@/lib/api";
 import { resendVerification } from "@/lib/auth";
 import { validateEmail } from "@/lib/auth-validation";
-import { primaryActionClass } from "./styles";
 
 export function ResendVerificationForm() {
   const [email, setEmail] = useState("");
@@ -46,12 +47,13 @@ export function ResendVerificationForm() {
       method="post"
       noValidate
       onSubmit={handleSubmit}
-      className="flex flex-col gap-3"
+      className="flex flex-col gap-4"
     >
-      <TextField
+      <Field
         label="Email"
         type="email"
         name="email"
+        prefix={<IconMail />}
         value={email}
         error={emailError}
         onChange={(event) => {
@@ -64,9 +66,9 @@ export function ResendVerificationForm() {
         required
       />
 
-      <button type="submit" disabled={submitting} className={primaryActionClass}>
+      <Button type="submit" size="lg" disabled={submitting}>
         {submitting ? "Sending…" : "Send a new link"}
-      </button>
+      </Button>
 
       {formError && <Notice tone="error">{formError}</Notice>}
       {sent && (

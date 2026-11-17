@@ -2,13 +2,15 @@
 
 import { useRef, useState } from "react";
 import type { FormEvent } from "react";
-import Link from "next/link";
+import { Button, ButtonLink } from "@/components/ui/button";
+import { Field } from "@/components/ui/field";
+import { IconBadge } from "@/components/ui/icon-badge";
+import { IconArrowLeft, IconKey, IconMail } from "@/components/ui/icons";
 import { Notice } from "@/components/ui/notice";
-import { TextField } from "@/components/ui/text-field";
 import { isApiError, unexpectedErrorMessage } from "@/lib/api";
 import { requestPasswordReset } from "@/lib/auth";
 import { validateEmail } from "@/lib/auth-validation";
-import { primaryActionClass, textLinkClass } from "./styles";
+import { AuthCard, AuthHeading } from "./auth-screen";
 
 function focusEmail(form: HTMLFormElement) {
   const input = form.elements.namedItem("email");
@@ -58,54 +60,58 @@ export function ForgotPasswordForm() {
   }
 
   return (
-    <form
-      method="post"
-      noValidate
-      onSubmit={handleSubmit}
-      className="flex flex-col gap-4"
-    >
-      <h1 className="text-2xl font-semibold tracking-tight">
-        Reset your password
-      </h1>
-      <p className="text-muted">
-        Enter the email address of your account, and we&apos;ll email you a
-        link to choose a new password.
-      </p>
+    <AuthCard note>
+      <form
+        method="post"
+        noValidate
+        onSubmit={handleSubmit}
+        className="flex flex-col gap-6"
+      >
+        <AuthHeading
+          badge={<IconBadge tone="warning" icon={<IconKey size={32} />} />}
+          title="Reset your password"
+          description="Enter your account's email. If it matches an account, we'll send a reset link."
+        />
 
-      {formError && <Notice tone="error">{formError}</Notice>}
-      {sent && (
-        // Same answer whether or not an account exists, or a link was just sent.
-        <Notice tone="info">
-          If that address belongs to an account, we&apos;ve emailed it a link
-          to reset your password. The link expires after a short time.
-        </Notice>
-      )}
+        {formError && <Notice tone="error">{formError}</Notice>}
+        {sent && (
+          // Same answer whether or not an account exists, or a link was just sent.
+          <Notice tone="info">
+            If that address belongs to an account, we&apos;ve emailed it a link
+            to reset your password. The link expires after a short time.
+          </Notice>
+        )}
 
-      <TextField
-        label="Email"
-        type="email"
-        name="email"
-        value={email}
-        error={emailError}
-        onChange={(event) => {
-          setEmail(event.target.value);
-          setEmailError(null);
-        }}
-        autoComplete="email"
-        autoCapitalize="none"
-        spellCheck={false}
-        required
-      />
+        <Field
+          label="Email"
+          type="email"
+          name="email"
+          prefix={<IconMail />}
+          value={email}
+          error={emailError}
+          onChange={(event) => {
+            setEmail(event.target.value);
+            setEmailError(null);
+          }}
+          autoComplete="email"
+          autoCapitalize="none"
+          spellCheck={false}
+          required
+        />
 
-      <button type="submit" disabled={submitting} className={primaryActionClass}>
-        {submitting ? "Sending…" : "Send reset link"}
-      </button>
+        <Button type="submit" variant="primary" size="lg" disabled={submitting}>
+          {submitting ? "Sending…" : "Send reset link"}
+        </Button>
 
-      <p className="text-center text-sm text-muted">
-        <Link href="/login" className={textLinkClass}>
+        <ButtonLink
+          href="/login"
+          variant="ghost"
+          icon={<IconArrowLeft />}
+          className="self-center"
+        >
           Back to log in
-        </Link>
-      </p>
-    </form>
+        </ButtonLink>
+      </form>
+    </AuthCard>
   );
 }

@@ -2,18 +2,24 @@ import type { ReactNode } from "react";
 
 type PageHeaderProps = {
   title: string;
+  /** A short line above the title. */
+  eyebrow?: string;
+  /** On the right of the title, e.g. a button. */
+  actions?: ReactNode;
+  /** Below the title, e.g. tabs. */
   children?: ReactNode;
 };
 
-/** Below the shell's sticky bar (--top-bar-height), which shows the brand on mobile. */
-export function PageHeader({ title, children }: PageHeaderProps) {
+export function PageHeader({ title, eyebrow, actions, children }: PageHeaderProps) {
   return (
-    <div className="sticky top-(--top-bar-height) z-10 border-b border-border bg-background">
-      <h1
-        className={`px-4 py-3 text-xl font-semibold tracking-tight ${children ? "max-sm:sr-only" : ""}`}
-      >
-        {title}
-      </h1>
+    <div className="flex flex-col gap-4">
+      <div className="flex items-center justify-between gap-4 px-1">
+        <div className="flex min-w-0 flex-col">
+          {eyebrow && <p className="text-meta font-medium text-muted">{eyebrow}</p>}
+          <h1 className="text-title font-bold text-primary">{title}</h1>
+        </div>
+        {actions}
+      </div>
       {children}
     </div>
   );

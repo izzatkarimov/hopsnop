@@ -1,5 +1,6 @@
 "use client";
 
+import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useAuth } from "./auth-provider";
 
@@ -13,13 +14,9 @@ export function SessionError() {
         title="Couldn't load Hopsnop"
         description="We couldn't check whether you're signed in. Please try again."
         action={
-          <button
-            type="button"
-            onClick={retry}
-            className="rounded-full bg-accent px-5 py-2 font-semibold text-accent-foreground transition-colors hover:bg-accent-hover"
-          >
+          <Button variant="primary" onClick={retry}>
             Try again
-          </button>
+          </Button>
         }
       />
     </div>

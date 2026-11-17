@@ -111,7 +111,7 @@ export function PostMenu({ content, onEdit, onDelete }: PostMenuProps) {
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
         onClick={() => setOpen((value) => !value)}
-        className="-my-1.5 -mr-2 rounded-full p-1.5 text-muted transition-colors hover:bg-accent/10 hover:text-accent"
+        className="-my-1.5 -mr-2 rounded-full p-1.5 text-muted transition-colors hover:bg-accent/10 hover:text-ink"
       >
         <MoreIcon width={18} height={18} />
       </button>

@@ -1,12 +1,13 @@
 "use client";
 
-import { useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import type { FormEvent, KeyboardEvent } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { Avatar } from "@/components/ui/avatar";
 import { isApiError, unexpectedErrorMessage } from "@/lib/api";
 import { checkPostContent } from "@/lib/posts";
 import type { User } from "@/lib/types";
+import { useComposeRequest } from "./compose-request";
 
 const COUNTER_THRESHOLD = 20;
 
@@ -67,6 +68,15 @@ export function PostComposer({
   const inFlight = useRef(false);
   const inputId = useId();
   const counterId = useId();
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const compose = useComposeRequest();
+  const requested = kind === "post" && compose?.pending === true;
+
+  useEffect(() => {
+    if (!requested) return;
+    textareaRef.current?.focus();
+    compose?.settle();
+  }, [requested, compose]);
 
   const {
     content,
@@ -122,6 +132,7 @@ export function PostComposer({
           {wording.label}
         </label>
         <textarea
+          ref={textareaRef}
           id={inputId}
           value={text}
           onChange={(event) => {

@@ -175,7 +175,7 @@ export function PostThread({ postId }: { postId: string }) {
           <p className="border-b border-border px-4 py-3 text-body">
             <Link
               href="/login"
-              className="font-semibold text-accent hover:underline"
+              className="font-semibold text-ink hover:underline"
             >
               Log in to reply
             </Link>
@@ -231,7 +231,7 @@ function ParentPost({ parentId, state, handlers, onRetry }: ParentPostProps) {
           <button
             type="button"
             onClick={onRetry}
-            className="font-semibold text-accent hover:underline"
+            className="font-semibold text-ink hover:underline"
           >
             Try again
           </button>

@@ -5,7 +5,7 @@ import type { FormEvent } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { PasswordField } from "@/components/auth/password-field";
 import { Notice } from "@/components/ui/notice";
-import { TextField } from "@/components/ui/text-field";
+import { Field } from "@/components/ui/field";
 import { isApiError, unexpectedErrorMessage } from "@/lib/api";
 import {
   isInvalidCodeError,
@@ -175,7 +175,7 @@ export function TwoFactorConfirmForm({
         required
       />
       {/* Only an app code is taken for replacing, so a numeric keypad fits there. */}
-      <TextField
+      <Field
         label={text.codeLabel}
         name="code"
         hint={text.codeHint}

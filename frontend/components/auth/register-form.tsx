@@ -2,10 +2,12 @@
 
 import { useRef, useState } from "react";
 import type { FormEvent } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
+import { Field } from "@/components/ui/field";
+import { IconMail } from "@/components/ui/icons";
 import { Notice } from "@/components/ui/notice";
-import { TextField } from "@/components/ui/text-field";
+import { TextLink } from "@/components/ui/text-link";
 import { isApiError, unexpectedErrorMessage } from "@/lib/api";
 import { isUsernameTakenError, register } from "@/lib/auth";
 import {
@@ -15,8 +17,8 @@ import {
   validateNewPassword,
   validateUsername,
 } from "@/lib/auth-validation";
+import { AuthCard, AuthHeading } from "./auth-screen";
 import { PasswordField } from "./password-field";
-import { primaryActionClass, textLinkClass } from "./styles";
 
 const FIELDS = ["displayName", "username", "email", "password"] as const;
 
@@ -145,57 +147,63 @@ export function RegisterForm() {
   }
 
   return (
-    // method="post": before JS loads, GET would put the password in the URL.
-    <form
-      method="post"
-      noValidate
-      onSubmit={handleSubmit}
-      className="flex flex-col gap-4"
-    >
-      <h1 className="text-2xl font-semibold tracking-tight">
-        Create your account
-      </h1>
+    <AuthCard note>
+      {/* method="post": before JS loads, GET would put the password in the URL. */}
+      <form
+        method="post"
+        noValidate
+        onSubmit={handleSubmit}
+        className="flex flex-col gap-6"
+      >
+        <AuthHeading
+          title="Create your account"
+          description="It takes a minute. No ads, ever."
+        />
 
-      {formError && <Notice tone="error">{formError}</Notice>}
+        {formError && <Notice tone="error">{formError}</Notice>}
 
-      <TextField
-        label="Display name"
-        autoComplete="name"
-        {...fieldProps("displayName")}
-      />
-      <TextField
-        label="Username"
-        hint="3 to 30 letters, numbers or underscores."
-        autoComplete="username"
-        autoCapitalize="none"
-        spellCheck={false}
-        {...fieldProps("username")}
-      />
-      <TextField
-        label="Email"
-        type="email"
-        autoComplete="email"
-        autoCapitalize="none"
-        spellCheck={false}
-        {...fieldProps("email")}
-      />
-      <PasswordField
-        label="Password"
-        hint={`At least ${PASSWORD_MIN_LENGTH} characters.`}
-        autoComplete="new-password"
-        {...fieldProps("password")}
-      />
+        <div className="flex flex-col gap-4">
+          <div className="grid items-start gap-4 sm:grid-cols-2 sm:gap-3">
+            <Field
+              label="Display name"
+              autoComplete="name"
+              {...fieldProps("displayName")}
+            />
+            <Field
+              label="Username"
+              hint="3 to 30 letters, numbers or underscores."
+              prefix="@"
+              autoComplete="username"
+              autoCapitalize="none"
+              spellCheck={false}
+              {...fieldProps("username")}
+            />
+          </div>
+          <Field
+            label="Email"
+            type="email"
+            prefix={<IconMail />}
+            autoComplete="email"
+            autoCapitalize="none"
+            spellCheck={false}
+            {...fieldProps("email")}
+          />
+          <PasswordField
+            label="Password"
+            hint={`At least ${PASSWORD_MIN_LENGTH} characters.`}
+            autoComplete="new-password"
+            {...fieldProps("password")}
+          />
+        </div>
 
-      <button type="submit" disabled={submitting} className={primaryActionClass}>
-        {submitting ? "Creating account…" : "Create account"}
-      </button>
+        <Button type="submit" variant="primary" size="lg" disabled={submitting}>
+          {submitting ? "Creating account…" : "Create account"}
+        </Button>
 
-      <p className="text-center text-sm text-muted">
-        Already have an account?{" "}
-        <Link href="/login" className={textLinkClass}>
-          Log in
-        </Link>
-      </p>
-    </form>
+        <p className="text-center text-body text-secondary">
+          Already have an account? <TextLink href="/login">Log in</TextLink>
+        </p>
+      </form>
+    </AuthCard>
   );
 }

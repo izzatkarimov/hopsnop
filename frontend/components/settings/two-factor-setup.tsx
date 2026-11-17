@@ -6,7 +6,7 @@ import { useAuth } from "@/components/auth/auth-provider";
 import { PasswordField } from "@/components/auth/password-field";
 import { Notice } from "@/components/ui/notice";
 import { QrCode } from "@/components/ui/qr-code";
-import { TextField } from "@/components/ui/text-field";
+import { Field } from "@/components/ui/field";
 import { isApiError, unexpectedErrorMessage } from "@/lib/api";
 import {
   confirmTwoFactor,
@@ -265,7 +265,7 @@ export function TwoFactorSetup({
             />
           </div>
 
-          <TextField
+          <Field
             label="Code from the app"
             name={CODE_FIELD}
             value={code}

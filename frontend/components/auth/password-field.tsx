@@ -2,30 +2,33 @@
 
 import { useState } from "react";
 import type { ComponentProps } from "react";
-import { TextField } from "@/components/ui/text-field";
+import { Field } from "@/components/ui/field";
+import { IconButton } from "@/components/ui/icon-button";
+import { IconEye, IconLock } from "@/components/ui/icons";
 
 type PasswordFieldProps = Omit<
-  ComponentProps<typeof TextField>,
-  "type" | "labelAction"
+  ComponentProps<typeof Field>,
+  "type" | "prefix" | "trailing"
 >;
 
 export function PasswordField(props: PasswordFieldProps) {
   const [visible, setVisible] = useState(false);
 
   return (
-    <TextField
+    <Field
       {...props}
       type={visible ? "text" : "password"}
-      labelAction={
-        <button
-          type="button"
+      prefix={<IconLock />}
+      trailing={
+        <IconButton
+          // Named after the field, so each password field's button is distinct.
+          label={`${visible ? "Hide" : "Show"} ${props.label.toLowerCase()}`}
+          icon={<IconEye />}
+          variant={visible ? "secondary" : "ghost"}
+          size="sm"
+          className="-mr-2"
           onClick={() => setVisible((value) => !value)}
-          className="rounded text-sm font-medium text-muted hover:text-foreground"
-        >
-          {visible ? "Hide" : "Show"}
-          {/* Named after the field, so each password field's button is distinct. */}
-          <span className="sr-only"> {props.label.toLowerCase()}</span>
-        </button>
+        />
       }
     />
   );

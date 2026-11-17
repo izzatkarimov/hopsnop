@@ -1,27 +1,46 @@
-import type { ComponentType, SVGProps } from "react";
+import type { ComponentType } from "react";
 import {
-  ExploreIcon,
-  HomeIcon,
-  SettingsIcon,
-  UserIcon,
+  IconHome,
+  IconHomeFilled,
+  IconSearch,
+  IconSearchFilled,
+  IconSettings,
+  IconSettingsFilled,
+  IconUser,
+  IconUserFilled,
 } from "@/components/ui/icons";
+import type { IconProps } from "@/components/ui/icons";
 
 export type NavItem = {
   href: string;
   label: string;
-  icon: ComponentType<SVGProps<SVGSVGElement>>;
+  icon: ComponentType<IconProps>;
+  activeIcon: ComponentType<IconProps>;
   inBottomNav: boolean;
 };
 
 export const navItems: NavItem[] = [
-  { href: "/", label: "Home", icon: HomeIcon, inBottomNav: true },
-  { href: "/explore", label: "Explore", icon: ExploreIcon, inBottomNav: true },
-  { href: "/profile", label: "Profile", icon: UserIcon, inBottomNav: true },
+  { href: "/", label: "Home", icon: IconHome, activeIcon: IconHomeFilled, inBottomNav: true },
+  {
+    href: "/search",
+    label: "Search",
+    icon: IconSearch,
+    activeIcon: IconSearchFilled,
+    inBottomNav: true,
+  },
   {
     href: "/settings",
     label: "Settings",
-    icon: SettingsIcon,
+    icon: IconSettings,
+    activeIcon: IconSettingsFilled,
     inBottomNav: false,
+  },
+  {
+    href: "/profile",
+    label: "Profile",
+    icon: IconUser,
+    activeIcon: IconUserFilled,
+    inBottomNav: true,
   },
 ];
 

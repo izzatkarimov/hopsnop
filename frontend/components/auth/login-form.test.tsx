@@ -250,7 +250,7 @@ async function reachCodeStep() {
   await user.type(identifier, "test_viewer");
   await user.type(password, "right password");
   await user.click(submit);
-  await screen.findByRole("heading", { name: "Enter your login code" });
+  await screen.findByRole("heading", { name: "Two-factor login" });
   return {
     user,
     code: screen.getByLabelText("Code"),
@@ -259,7 +259,7 @@ async function reachCodeStep() {
 }
 
 function passwordStepHeading() {
-  return screen.getByRole("heading", { name: "Log in to Hopsnop" });
+  return screen.getByRole("heading", { name: "Welcome back" });
 }
 
 describe("LoginForm: two-factor login", () => {
@@ -267,7 +267,7 @@ describe("LoginForm: two-factor login", () => {
     const address = window.location.href;
     const { code } = await reachCodeStep();
 
-    expect(screen.getByRole("heading", { name: "Enter your login code" })).toHaveFocus();
+    expect(screen.getByRole("heading", { name: "Two-factor login" })).toHaveFocus();
     expect(screen.queryByLabelText("Password")).not.toBeInTheDocument();
     expect(code).toHaveAccessibleDescription("Can't use the app? Enter one of your recovery codes instead.");
     expect(code).toHaveAttribute("autocomplete", "one-time-code");
@@ -404,7 +404,7 @@ describe("LoginForm: two-factor login", () => {
     await user.click(verify);
 
     expect(await screen.findByRole("alert")).toHaveTextContent(message);
-    expect(screen.getByRole("heading", { name: "Enter your login code" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Two-factor login" })).toBeInTheDocument();
     expect(code).toHaveValue("123456");
     expect(authState()).toBe("unauthenticated");
   });
@@ -496,5 +496,56 @@ describe("LoginForm: two-factor login", () => {
       "/auth/login/two-factor",
     ]);
     expect(api.calls().some((call) => call.path.includes(CHALLENGE))).toBe(false);
+  });
+});
+
+describe("LoginForm: the form", () => {
+  it("shows the password on request and hides it again", async () => {
+    const { user, password } = await setup();
+
+    await user.click(screen.getByRole("button", { name: "Show password" }));
+    expect(password).toHaveAttribute("type", "text");
+
+    await user.click(screen.getByRole("button", { name: "Hide password" }));
+    expect(password).toHaveAttribute("type", "password");
+  });
+
+  it("offers a password reset next to the password field", async () => {
+    await setup();
+
+    expect(screen.getByRole("link", { name: "Forgot password?" })).toHaveAttribute(
+      "href",
+      "/forgot-password",
+    );
+    expect(screen.getByRole("link", { name: "Create an account" })).toHaveAttribute("href", "/register");
+  });
+
+  it("marks neither field after wrong credentials, as that would say which one was wrong", async () => {
+    api.on("POST", "/auth/login", json(401, { detail: "Invalid username/email or password." }));
+    const { user, identifier, password, submit } = await setup();
+    await user.type(identifier, "test_viewer");
+    await user.type(password, "wrong password");
+
+    await user.click(submit);
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Incorrect username, email or password.");
+    expect(alert).toHaveTextContent("Check them and try again, or reset your password.");
+    expect(identifier).not.toHaveAttribute("aria-invalid");
+    expect(password).not.toHaveAttribute("aria-invalid");
+  });
+
+  it("links a refused code to the code field, and keeps the field for recovery codes", async () => {
+    api.on("POST", "/auth/login/two-factor", json(400, { detail: "Invalid code." }));
+    const { user, code, verify } = await reachCodeStep();
+
+    await user.type(code, "123456");
+    await user.click(verify);
+
+    await waitFor(() => expect(code).toHaveAttribute("aria-invalid", "true"));
+    expect(code).toHaveAccessibleDescription("That code didn't work. Check it and try again.");
+    expect(code).toHaveFocus();
+    expect(code).not.toHaveAttribute("inputmode");
+    expect(screen.getByRole("button", { name: "Back to log in" })).toBeEnabled();
   });
 });

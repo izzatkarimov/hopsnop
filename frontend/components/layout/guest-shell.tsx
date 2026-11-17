@@ -1,30 +1,21 @@
 import type { ReactNode } from "react";
-import Link from "next/link";
+import { ButtonLink } from "@/components/ui/button";
 import { Wordmark } from "@/components/ui/wordmark";
 
 export function GuestShell({ children }: { children: ReactNode }) {
   return (
-    // The header (h-14) stays at every width, so PageHeader always sits below it.
-    <div className="mx-auto flex min-h-dvh w-full max-w-feed flex-col border-border [--top-bar-height:3.5rem] sm:border-x">
-      <header className="sticky top-0 z-20 flex h-14 items-center justify-between gap-3 border-b border-border bg-background px-3">
+    <div className="flex min-h-dvh flex-col">
+      <header className="sticky top-0 z-20 flex h-16 items-center justify-between gap-3 border-b border-edge/6 bg-bg/80 px-4 backdrop-blur-lg sm:px-6">
         <Wordmark />
-        <nav aria-label="Account" className="flex items-center gap-1 text-body">
-          <Link
-            href="/login"
-            className="rounded-full px-4 py-1.5 font-semibold transition-colors hover:bg-hover"
-          >
-            Log in
-          </Link>
-          <Link
-            href="/register"
-            className="rounded-full bg-accent px-4 py-1.5 font-semibold text-accent-foreground transition-colors hover:bg-accent-hover"
-          >
+        <nav aria-label="Account" className="flex items-center gap-2">
+          <ButtonLink href="/login">Log in</ButtonLink>
+          <ButtonLink href="/register" variant="primary">
             Sign up
-          </Link>
+          </ButtonLink>
         </nav>
       </header>
-      <main id="main-content" className="flex-1">
-        {children}
+      <main id="main-content" className="flex flex-1 justify-center px-4 py-4 sm:px-6 sm:py-6">
+        <div className="flex w-full max-w-main min-w-0 flex-col gap-4">{children}</div>
       </main>
     </div>
   );

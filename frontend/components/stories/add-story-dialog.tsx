@@ -4,7 +4,7 @@ import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import type { ChangeEvent, FormEvent, KeyboardEvent } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { Notice } from "@/components/ui/notice";
-import { TextAreaField } from "@/components/ui/text-field";
+import { TextAreaField } from "@/components/ui/field";
 import { isApiError, unexpectedErrorMessage } from "@/lib/api";
 import type { ApiError } from "@/lib/api";
 import { countCharacters } from "@/lib/posts";

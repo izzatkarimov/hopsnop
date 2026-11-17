@@ -17,11 +17,17 @@ const colors = [
 ];
 
 const sizes = {
+  xs: "size-5 text-[0.5rem]",
   sm: "size-9 text-sm",
   md: "size-10 text-base",
   story: "size-14 text-xl",
   lg: "size-20 text-3xl",
   xl: "size-24 text-4xl",
+};
+
+const rings = {
+  unseen: "inset-ring-accent",
+  seen: "inset-ring-edge/12",
 };
 
 function colorFor(username: string): string {
@@ -41,18 +47,20 @@ function initialsFor(displayName: string): string {
 type AvatarProps = {
   user: Pick<User, "username" | "displayName" | "avatarUrl">;
   size?: keyof typeof sizes;
+  /** A story ring; whatever it means must also be said in text nearby. */
+  ring?: keyof typeof rings;
 };
 
 /** Decorative: the user's name is always shown next to it. */
-export function Avatar({ user, size = "md" }: AvatarProps) {
+export function Avatar({ user, size = "md", ring }: AvatarProps) {
   // The failed URL, not a flag, so a changed URL is tried again.
   const [failedUrl, setFailedUrl] = useState<string | null>(null);
 
   // A path on the API; nothing else is loaded.
   const url = apiAssetUrl(user.avatarUrl);
 
-  if (url && url !== failedUrl) {
-    return (
+  const picture =
+    url && url !== failedUrl ? (
       // Plain <img> on purpose: next/image would have the Next.js server fetch it.
       // eslint-disable-next-line @next/next/no-img-element
       <img
@@ -62,17 +70,25 @@ export function Avatar({ user, size = "md" }: AvatarProps) {
         loading="lazy"
         decoding="async"
         onError={() => setFailedUrl(url)}
-        className={`shrink-0 rounded-full bg-hover object-cover ${sizes[size]}`}
+        className={`shrink-0 rounded-full bg-tile object-cover ${sizes[size]}`}
       />
+    ) : (
+      <span
+        aria-hidden="true"
+        className={`flex shrink-0 select-none items-center justify-center rounded-full font-semibold text-white ${sizes[size]} ${colorFor(user.username)}`}
+      >
+        {initialsFor(user.displayName)}
+      </span>
     );
-  }
+
+  if (!ring) return picture;
 
   return (
     <span
-      aria-hidden="true"
-      className={`flex shrink-0 select-none items-center justify-center rounded-full font-semibold text-white ${sizes[size]} ${colorFor(user.username)}`}
+      data-ring={ring}
+      className={`inline-flex shrink-0 rounded-full p-1.5 inset-ring-2 ${rings[ring]}`}
     >
-      {initialsFor(user.displayName)}
+      {picture}
     </span>
   );
 }

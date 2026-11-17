@@ -36,6 +36,21 @@ describe("Avatar", () => {
     expect(screen.getByText("AE")).toBeInTheDocument();
   });
 
+  it.each(["unseen", "seen"] as const)("can wear a story ring, %s, around the picture", (ring) => {
+    const { container } = render(<Avatar user={{ ...person, avatarUrl: PATH }} ring={ring} />);
+
+    const wrapper = container.firstElementChild!;
+    expect(wrapper).toHaveAttribute("data-ring", ring);
+    expect(wrapper.querySelector("img")).toHaveAttribute("src", `${API_URL}${PATH}`);
+  });
+
+  it("wears no ring unless asked to", () => {
+    const { container } = render(<Avatar user={{ ...person, avatarUrl: null }} />);
+
+    expect(container.querySelector("[data-ring]")).toBeNull();
+    expect(screen.getByText("AE")).toBeInTheDocument();
+  });
+
   it("falls back to the initials when the picture cannot be loaded", () => {
     const { container } = render(<Avatar user={{ ...person, avatarUrl: PATH }} />);
 

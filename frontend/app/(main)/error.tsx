@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 
 export default function MainError({
@@ -21,13 +22,9 @@ export default function MainError({
         title="Something went wrong"
         description="We couldn't load this page. Please try again."
         action={
-          <button
-            type="button"
-            onClick={() => retry()}
-            className="rounded-full bg-accent px-5 py-2 font-semibold text-accent-foreground transition-colors hover:bg-accent-hover"
-          >
+          <Button variant="primary" onClick={() => retry()}>
             Try again
-          </button>
+          </Button>
         }
       />
     </div>

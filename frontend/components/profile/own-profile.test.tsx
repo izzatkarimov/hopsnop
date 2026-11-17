@@ -2,7 +2,7 @@ import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RequireAuth } from "@/components/auth/require-auth";
-import { SidebarAccount } from "@/components/layout/sidebar-account";
+import { ProfileChip } from "@/components/layout/profile-chip";
 import type { MyProfileResponse } from "@/lib/profiles";
 import { API_URL, api, deferred, json } from "@/test/api";
 import { page } from "@/test/fixtures";
@@ -58,7 +58,7 @@ async function setup(...profileReplies: Parameters<typeof api.on>[2][]) {
   api.on("GET", `/users/${account.username}/posts`, json(200, page([])));
   await renderSignedIn(
     <RequireAuth>
-      <SidebarAccount />
+      <ProfileChip />
       <OwnProfile />
     </RequireAuth>,
   );
@@ -117,7 +117,7 @@ describe("Editing one's profile", () => {
 
     expect(await screen.findByRole("heading", { name: "New Name" })).toBeInTheDocument();
     expect(saves().map((call) => call.body)).toEqual([{ display_name: "New Name" }]);
-    expect(screen.getByText("Signed in as New Name")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "New Name @test_viewer" })).toHaveAttribute("href", "/profile");
     expect(screen.getByRole("status")).toHaveTextContent("Profile updated.");
     expect(screen.queryByLabelText("Display name")).not.toBeInTheDocument();
   });
@@ -187,7 +187,7 @@ describe("Editing one's profile", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Something went wrong. Please try again.");
     expect(bio).toHaveValue("Old bio and more");
-    expect(screen.getByText("Signed in as Test Viewer")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Test Viewer @test_viewer" })).toBeInTheDocument();
   });
 
   it("saves once, however often it is sent at the same moment", async () => {

@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { LogoutIcon } from "@/components/ui/icons";
+import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
+import { IconDoor } from "@/components/ui/icons";
 import { useAuth } from "./auth-provider";
 
 type LogoutButtonProps = {
@@ -25,41 +27,36 @@ export function LogoutButton({ variant }: LogoutButtonProps) {
     }
   }
 
-  const error = failed && (
-    <span role="alert" className="text-sm text-danger">
-      Couldn&apos;t log out. Try again.
-    </span>
-  );
-
   if (variant === "icon") {
     return (
-      <span className="flex flex-col items-center gap-1">
-        <button
-          type="button"
+      <>
+        <IconButton
+          label="Log out"
+          title="Log out"
+          icon={<IconDoor />}
           onClick={handleClick}
           disabled={pending}
-          aria-label="Log out"
-          title="Log out"
-          className="rounded-full p-2 text-muted transition-colors hover:bg-hover hover:text-foreground disabled:opacity-50"
-        >
-          <LogoutIcon width={20} height={20} />
-        </button>
-        {error}
-      </span>
+        />
+        {/* A full line of its own in the wrapping row it sits in. */}
+        {failed && (
+          <p role="alert" className="basis-full text-center text-meta font-medium text-danger lg:text-left">
+            Couldn&apos;t log out. Try again.
+          </p>
+        )}
+      </>
     );
   }
 
   return (
     <span className="flex flex-col items-center gap-2">
-      <button
-        type="button"
-        onClick={handleClick}
-        disabled={pending}
-        className="rounded-full border border-border px-5 py-2 font-semibold transition-colors hover:bg-hover disabled:opacity-50"
-      >
+      <Button onClick={handleClick} disabled={pending}>
         {pending ? "Logging out…" : "Log out"}
-      </button>
-      {error}
+      </Button>
+      {failed && (
+        <span role="alert" className="text-meta font-medium text-danger">
+          Couldn&apos;t log out. Try again.
+        </span>
+      )}
     </span>
   );
 }

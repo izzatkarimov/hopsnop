@@ -7,7 +7,7 @@ import { RightRail } from "./right-rail";
 
 // The navigation reads the current path, and RequireAuth may redirect.
 vi.mock("next/navigation", () => ({
-  usePathname: () => "/explore",
+  usePathname: () => "/search",
   useRouter: () => ({ replace: vi.fn(), push: vi.fn() }),
 }));
 
@@ -59,7 +59,7 @@ describe("AppShell", () => {
     );
 
     expect(await screen.findByRole("main")).toHaveTextContent("Page content");
-    expect(screen.getAllByRole("link", { name: "Explore" }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("link", { name: "Search" }).length).toBeGreaterThan(0);
     expect(screen.getByRole("complementary", { name: "About Hopsnop" })).toBeInTheDocument();
     for (const text of FORMER_SUGGESTIONS) {
       expect(document.body).not.toHaveTextContent(text);

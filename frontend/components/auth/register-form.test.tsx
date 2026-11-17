@@ -220,3 +220,31 @@ describe("RegisterForm: one registration at a time", () => {
     expect(registerRequests()).toHaveLength(1);
   });
 });
+
+describe("RegisterForm: the form", () => {
+  it("shows the password on request, to check what was typed", async () => {
+    const { user, password } = setup();
+
+    await user.type(password, "a long password");
+    await user.click(screen.getByRole("button", { name: "Show password" }));
+
+    expect(password).toHaveAttribute("type", "text");
+    expect(password).toHaveValue("a long password");
+  });
+
+  it("shows the @ before the username without making it part of the name or the value", async () => {
+    const { user, username } = setup();
+
+    await user.type(username, "test_viewer");
+
+    expect(username).toHaveAccessibleName("Username");
+    expect(username).toHaveValue("test_viewer");
+    expect(screen.getByText("@")).toHaveAttribute("aria-hidden", "true");
+  });
+
+  it("leads to the login page for people with an account", () => {
+    setup();
+
+    expect(screen.getByRole("link", { name: "Log in" })).toHaveAttribute("href", "/login");
+  });
+});

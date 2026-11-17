@@ -1,12 +1,9 @@
+import { LogoMark } from "@/components/ui/wordmark";
+
 export function SessionLoading() {
   return (
     <div role="status" className="flex min-h-dvh items-center justify-center">
-      <span
-        aria-hidden="true"
-        className="flex size-10 animate-pulse items-center justify-center rounded-xl bg-accent text-xl font-bold leading-none text-accent-foreground"
-      >
-        h
-      </span>
+      <LogoMark className="text-primary motion-safe:animate-pulse" />
       <span className="sr-only">Loading…</span>
     </div>
   );

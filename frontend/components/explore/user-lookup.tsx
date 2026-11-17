@@ -7,7 +7,7 @@ import { useAuth } from "@/components/auth/auth-provider";
 import { profileHref } from "@/components/posts/post-item";
 import { Avatar } from "@/components/ui/avatar";
 import { EmptyState } from "@/components/ui/empty-state";
-import { TextField } from "@/components/ui/text-field";
+import { Field } from "@/components/ui/field";
 import { unexpectedErrorMessage } from "@/lib/api";
 import { isUsername } from "@/lib/auth-validation";
 import { formatCount } from "@/lib/format";
@@ -180,13 +180,13 @@ export function UserLookup() {
             Look someone up by their exact username. Searching by name, and
             searching posts, isn&apos;t available yet. The newest posts from
             everyone are under{" "}
-            <Link href="/" className="font-medium text-accent hover:underline">
+            <Link href="/" className="font-medium text-ink hover:underline">
               For you on Home
             </Link>
             .
           </p>
         </div>
-        <TextField
+        <Field
           label="Username"
           type="search"
           name="username"
@@ -240,7 +240,7 @@ function AccountRow({ profile, isViewer }: AccountRowProps) {
             <span className="truncate text-muted">@{profile.username}</span>
           </Link>
           {marker && (
-            <span className="shrink-0 rounded-full bg-accent/10 px-2 py-0.5 text-xs font-semibold text-accent">
+            <span className="shrink-0 rounded-full bg-accent/10 px-2 py-0.5 text-xs font-semibold text-ink">
               {marker}
             </span>
           )}

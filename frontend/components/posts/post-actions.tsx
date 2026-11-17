@@ -7,8 +7,8 @@ import type { Post } from "@/lib/types";
 // Full class names are listed so Tailwind can detect them.
 const tones = {
   accent: {
-    active: "text-accent",
-    hover: "hover:text-accent",
+    active: "text-ink",
+    hover: "hover:text-ink",
     iconHover: "group-hover:bg-accent/10",
   },
   like: {

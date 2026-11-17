@@ -1,17 +1,20 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Bricolage_Grotesque, JetBrains_Mono } from "next/font/google";
 import { connection } from "next/server";
 import { AuthProvider } from "@/components/auth/auth-provider";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+// Weight axis only: its default optical size (14) and width (100) are the ones we use.
+const bricolage = Bricolage_Grotesque({
+  variable: "--font-bricolage",
   subsets: ["latin"],
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+// Only recovery codes and the two-factor key use it, so it isn't preloaded.
+const jetbrainsMono = JetBrains_Mono({
+  variable: "--font-jetbrains-mono",
   subsets: ["latin"],
+  preload: false,
 });
 
 export const metadata: Metadata = {
@@ -25,6 +28,7 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   // Lets the mobile bottom navigation respect the device safe area.
   viewportFit: "cover",
+  themeColor: "#0f0e0e",
 };
 
 export default async function RootLayout({ children }: LayoutProps<"/">) {
@@ -34,9 +38,9 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+      className={`${bricolage.variable} ${jetbrainsMono.variable} antialiased`}
     >
-      <body className="bg-background font-sans text-foreground">
+      <body className="dot-grid min-h-dvh bg-bg font-sans text-body text-primary">
         <AuthProvider>{children}</AuthProvider>
       </body>
     </html>

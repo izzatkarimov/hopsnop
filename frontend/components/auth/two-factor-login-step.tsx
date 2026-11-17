@@ -2,13 +2,16 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
+import { Button } from "@/components/ui/button";
+import { Field } from "@/components/ui/field";
+import { IconBadge } from "@/components/ui/icon-badge";
+import { IconArrowLeft, IconShieldCheck } from "@/components/ui/icons";
 import { Notice } from "@/components/ui/notice";
-import { TextField } from "@/components/ui/text-field";
 import { isApiError, unexpectedErrorMessage } from "@/lib/api";
 import { isInvalidCodeError, isInvalidLoginChallengeError } from "@/lib/auth";
 import { validateAppOrRecoveryCode } from "@/lib/auth-validation";
 import { useAuth } from "./auth-provider";
-import { primaryActionClass, textLinkClass } from "./styles";
+import { AuthCard, AuthHeading } from "./auth-screen";
 
 const CODE_FIELD = "code";
 
@@ -86,61 +89,56 @@ export function TwoFactorLoginStep({
   }
 
   return (
-    // method="post": before JS loads, GET would put the code in the URL.
-    <form
-      method="post"
-      noValidate
-      onSubmit={handleSubmit}
-      className="flex flex-col gap-4"
-    >
-      <div className="flex flex-col gap-1">
-        <h1
-          ref={headingRef}
-          tabIndex={-1}
-          className="text-2xl font-semibold tracking-tight"
-        >
-          Enter your login code
-        </h1>
-        <p className="text-body text-muted">
-          Two-factor login is on for this account. Enter the 6-digit code from
-          your authenticator app.
-        </p>
-      </div>
+    <AuthCard>
+      {/* method="post": before JS loads, GET would put the code in the URL. */}
+      <form
+        method="post"
+        noValidate
+        onSubmit={handleSubmit}
+        className="flex flex-col gap-6"
+      >
+        <AuthHeading
+          badge={<IconBadge tone="success" icon={<IconShieldCheck size={32} />} />}
+          title="Two-factor login"
+          description="Two-factor login is on for this account. Enter the 6-digit code from your authenticator app."
+          headingRef={headingRef}
+        />
 
-      {formError && <Notice tone="error">{formError}</Notice>}
+        {formError && <Notice tone="error">{formError}</Notice>}
 
-      {/* No inputMode: a numeric keypad couldn't type a recovery code. */}
-      <TextField
-        label="Code"
-        name={CODE_FIELD}
-        hint="Can't use the app? Enter one of your recovery codes instead."
-        value={code}
-        error={codeError}
-        onChange={(event) => {
-          setCode(event.target.value);
-          setCodeError(null);
-        }}
-        autoComplete="one-time-code"
-        autoCapitalize="none"
-        autoCorrect="off"
-        spellCheck={false}
-        required
-      />
+        {/* No inputMode: a numeric keypad couldn't type a recovery code. */}
+        <Field
+          label="Code"
+          name={CODE_FIELD}
+          appearance="code"
+          hint="Can't use the app? Enter one of your recovery codes instead."
+          value={code}
+          error={codeError}
+          onChange={(event) => {
+            setCode(event.target.value);
+            setCodeError(null);
+          }}
+          autoComplete="one-time-code"
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
+          required
+        />
 
-      <button type="submit" disabled={submitting} className={primaryActionClass}>
-        {submitting ? "Verifying…" : "Verify"}
-      </button>
+        <Button type="submit" variant="primary" size="lg" disabled={submitting}>
+          {submitting ? "Verifying…" : "Verify"}
+        </Button>
 
-      <p className="text-center text-sm">
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          icon={<IconArrowLeft />}
           onClick={onBack}
           disabled={submitting}
-          className={`${textLinkClass} disabled:opacity-50`}
+          className="self-center"
         >
           Back to log in
-        </button>
-      </p>
-    </form>
+        </Button>
+      </form>
+    </AuthCard>
   );
 }

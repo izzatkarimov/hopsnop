@@ -8,7 +8,7 @@ export function PostContent({ content }: { content: string }) {
     <p className="whitespace-pre-wrap wrap-break-word leading-relaxed">
       {segments.map((segment, index) =>
         segment.type === "mention" ? (
-          <span key={index} className="text-accent">
+          <span key={index} className="text-ink">
             @{segment.username}
           </span>
         ) : (

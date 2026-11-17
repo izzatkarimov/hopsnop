@@ -1,52 +1,106 @@
 @import "tailwindcss";
 
+/* The palette. A light theme would redefine these values under its own selector. */
 :root {
-  --background: #ffffff;
-  --foreground: #16181d;
-  --muted: #5b6370;
-  --border: #e6e8eb;
-  --hover: #f2f4f6;
-  --accent: #0b7a55;
-  --accent-hover: #09694a;
-  --accent-foreground: #ffffff;
-  --like: #e11d48;
-  --danger: #dc2626;
-}
+  color-scheme: dark;
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0d0f12;
-    --foreground: #e8eaed;
-    --muted: #8b939e;
-    --border: #262a30;
-    --hover: #171a1f;
-    --accent: #3ccf91;
-    --accent-hover: #5ad9a3;
-    --accent-foreground: #04261a;
-    --like: #fb7185;
-    --danger: #f87171;
-  }
+  --bg: #0f0e0e;
+  --shell-top: #1a1818;
+  --shell-bottom: #141212;
+  --tile: #1c1a1a;
+  --well: #0d0c0c;
+  --raised-top: #3a3636;
+  --raised-bottom: #2a2727;
+  --glass: rgb(42 39 39 / 0.72);
+  --scrim: rgb(10 9 9 / 0.64);
+  /* Borders and hairlines, used at 4 to 12%. */
+  --edge: #ffffff;
+  /* Top-edge highlights and button gloss. */
+  --highlight: #ffffff;
+
+  --fg: #f4efef;
+  --fg-secondary: #b5adad;
+  --fg-muted: #8f8787;
+
+  --ink: #8f9cff;
+  --accent: #2233c4;
+  --like: #ff6b9b;
+  --success: #4cd38a;
+  --warning: #f5c451;
+  --mention: #a78bfa;
+  --danger: #ff7676;
+  --danger-solid: #c93a3f;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-muted: var(--muted);
-  --color-border: var(--border);
-  --color-hover: var(--hover);
+  --color-bg: var(--bg);
+  --color-shell-top: var(--shell-top);
+  --color-shell-bottom: var(--shell-bottom);
+  --color-tile: var(--tile);
+  --color-well: var(--well);
+  --color-raised-top: var(--raised-top);
+  --color-raised-bottom: var(--raised-bottom);
+  --color-glass: var(--glass);
+  --color-scrim: var(--scrim);
+  --color-edge: var(--edge);
+  --color-highlight: var(--highlight);
+
+  --text-color-primary: var(--fg);
+  --text-color-secondary: var(--fg-secondary);
+  --text-color-muted: var(--fg-muted);
+
+  --color-ink: var(--ink);
   --color-accent: var(--accent);
-  --color-accent-hover: var(--accent-hover);
-  --color-accent-foreground: var(--accent-foreground);
   --color-like: var(--like);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-mention: var(--mention);
   --color-danger: var(--danger);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-danger-solid: var(--danger-solid);
+
+  --font-sans: var(--font-bricolage), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
+
+  /* Older names, mapped onto the palette until every screen uses the ones above. */
+  --color-background: var(--bg);
+  --color-foreground: var(--fg);
+  --color-border: color-mix(in oklab, var(--edge) 6%, transparent);
+  --color-hover: color-mix(in oklab, var(--edge) 4%, transparent);
+  --color-accent-hover: color-mix(in oklab, var(--accent) 85%, white);
+  --color-accent-foreground: #ffffff;
 }
 
 @theme {
-  --container-feed: 600px;
-  --text-body: 0.9375rem;
-  --text-body--line-height: 1.4;
+  --text-meta: 0.75rem;
+  --text-meta--line-height: 1rem;
+  --text-body: 1rem;
+  --text-body--line-height: 1.5rem;
+  --text-control: 1rem;
+  --text-control--line-height: 1.25rem;
+  --text-lead: 1.25rem;
+  --text-lead--line-height: 1.75rem;
+  --text-title: 1.5rem;
+  --text-title--line-height: 2rem;
+  --text-display: 1.75rem;
+  --text-display--line-height: 2.25rem;
+
+  --radius-chip: 0.5rem;
+  --radius-item: 0.75rem;
+  --radius-field: 1rem;
+  --radius-tile: 1.5rem;
+  --radius-shell: 2rem;
+
+  --shadow-shell:
+    0 4px 4px rgb(0 0 0 / 0.04), 0 8px 16px rgb(0 0 0 / 0.06),
+    0 16px 32px rgb(0 0 0 / 0.1), 0 32px 64px rgb(0 0 0 / 0.16);
+  --shadow-raised: 0 4px 8px rgb(0 0 0 / 0.24);
+  --shadow-primary: 0 4px 12px rgb(34 51 196 / 0.4);
+  --shadow-danger: 0 4px 12px rgb(201 58 63 / 0.32);
+  --inset-shadow-well: inset 0 4px 8px rgb(0 0 0 / 0.48);
+
+  --breakpoint-wide: 68.75rem;
+  --container-main: 40rem;
+
   /* The 5 seconds a story is shown. */
   --animate-story-progress: story-progress 5s linear forwards;
 
@@ -60,14 +114,88 @@
   }
 }
 
+/* Surfaces. Borders are inset rings, so they never change an element's size. */
+
+@utility surface-shell {
+  @apply bg-linear-to-b from-shell-top to-shell-bottom shadow-shell inset-ring inset-ring-edge/6 inset-shadow-[0_1px_0] inset-shadow-highlight/6;
+}
+
+@utility surface-tile {
+  @apply bg-tile inset-ring inset-ring-edge/4 inset-shadow-[0_1px_0] inset-shadow-highlight/4;
+}
+
+@utility surface-well {
+  @apply bg-well inset-ring inset-ring-edge/6 inset-shadow-well;
+}
+
+@utility surface-raised {
+  @apply bg-linear-to-b from-raised-top to-raised-bottom shadow-raised inset-ring inset-ring-edge/8 inset-shadow-[0_1px_0] inset-shadow-highlight/10;
+}
+
+@utility surface-glass {
+  @apply bg-glass backdrop-blur-lg inset-ring inset-ring-edge/10;
+}
+
+@utility surface-primary {
+  @apply bg-accent bg-linear-to-b from-highlight/18 to-highlight/0 shadow-primary inset-ring inset-ring-highlight/12 inset-shadow-[0_1px_0] inset-shadow-highlight/24;
+}
+
+@utility surface-danger {
+  @apply bg-danger-solid bg-linear-to-b from-highlight/16 to-highlight/0 shadow-danger inset-ring inset-ring-highlight/12 inset-shadow-[0_1px_0] inset-shadow-highlight/24;
+}
+
+@utility focus-ring {
+  &:focus-visible {
+    @apply outline-hidden inset-ring inset-ring-ink/72 ring-4 ring-accent/40;
+  }
+}
+
+/* A 2×2 dot every 4px, drawn without an image. */
+@utility dot-grid {
+  background-image: conic-gradient(
+    color-mix(in oklab, var(--color-edge) 5.5%, transparent) 25%,
+    transparent 0
+  );
+  background-size: 4px 4px;
+}
+
+@utility glow {
+  background-image: radial-gradient(
+    closest-side,
+    color-mix(in oklab, var(--color-accent) 20%, transparent),
+    transparent
+  );
+}
+
 @layer base {
+  html {
+    scrollbar-gutter: stable;
+  }
+
+  /* Nothing behind an open modal scrolls. */
+  html:has(dialog:modal) {
+    overflow: hidden;
+  }
+
   body {
-    background: var(--background);
-    color: var(--foreground);
+    background-color: var(--bg);
+    color: var(--fg);
   }
 
   :focus-visible {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--ink);
     outline-offset: 2px;
+  }
+
+  dialog::backdrop {
+    background-color: var(--scrim, rgb(10 9 9 / 0.64));
+    backdrop-filter: blur(12px);
+  }
+
+  /* Keeps autofilled fields dark instead of the browser's own colours. */
+  input:-webkit-autofill {
+    -webkit-text-fill-color: var(--fg);
+    caret-color: var(--fg);
+    box-shadow: inset 0 0 0 100px var(--well);
   }
 }
