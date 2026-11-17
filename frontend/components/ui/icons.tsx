@@ -240,6 +240,112 @@ export function IconDoor(props: IconProps) {
   );
 }
 
+export function IconBubble(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M5.002 4H19.002C20.106 4 21.002 4.895 21.002 6V16C21.002 17.105 20.106 18 19.002 18H12.002L7.002 21V18H5.002C3.897 18 3.002 17.105 3.002 16V6C3.002 4.895 3.897 4 5.002 4Z" />
+    </Icon>
+  );
+}
+
+export function IconRepost(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M4 13V7C4 5.895 4.895 5 6 5H15" />
+      <path d="M13 2L16 5L13 8" />
+      <path d="M20 11V17C20 18.105 19.105 19 18 19H9" />
+      <path d="M11 22L8 19L11 16" />
+    </Icon>
+  );
+}
+
+export function IconHeart(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M21 10C21 15.75 12.75 20 12 20C11.25 20 3 15.75 3 10C3 6 5.5 4 8 4C10.5 4 12 5.5 12 5.5C12 5.5 13.5 4 16 4C18.5 4 21 6 21 10Z" />
+    </Icon>
+  );
+}
+
+export function IconHeartFilled(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path
+        fill="currentColor"
+        stroke="none"
+        d="M12.584 3.872C12.362 3.993 12.166 4.115 12 4.228C11.833 4.115 11.639 3.993 11.416 3.872C10.619 3.437 9.454 3 8 3C6.482 3 4.965 3.609 3.833 4.816C2.696 6.029 2 7.786 2 10C2 13.345 4.373 16.102 6.582 17.927C7.713 18.862 8.867 19.606 9.792 20.12C10.254 20.377 10.669 20.582 11.004 20.725C11.171 20.797 11.329 20.858 11.471 20.903C11.578 20.938 11.784 21 12 21C12.216 21 12.422 20.938 12.529 20.903C12.671 20.858 12.829 20.797 12.996 20.725C13.331 20.582 13.746 20.377 14.208 20.12C15.133 19.606 16.287 18.862 17.418 17.927C19.627 16.102 22 13.345 22 10C22 7.786 21.304 6.029 20.167 4.816C19.035 3.609 17.518 3 16 3C14.545 3 13.381 3.437 12.584 3.872Z"
+      />
+    </Icon>
+  );
+}
+
+export function IconShare(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M9.619 10.861L21 4.554M9.047 10.904L4.101 5.688C3.496 5.051 3.948 4 4.826 4H20.251C21.025 4 21.505 4.84 21.113 5.507L13.19 18.976C12.743 19.736 11.603 19.588 11.365 18.739L9.285 11.322C9.241 11.166 9.159 11.022 9.047 10.904Z" />
+    </Icon>
+  );
+}
+
+export function IconMore(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M12 13C12.552 13 13 12.552 13 12C13 11.448 12.552 11 12 11C11.448 11 11 11.448 11 12C11 12.552 11.448 13 12 13Z" />
+      <path d="M20 13C20.552 13 21 12.552 21 12C21 11.448 20.552 11 20 11C19.448 11 19 11.448 19 12C19 12.552 19.448 13 20 13Z" />
+      <path d="M4 13C4.552 13 5 12.552 5 12C5 11.448 4.552 11 4 11C3.448 11 3 11.448 3 12C3 12.552 3.448 13 4 13Z" />
+    </Icon>
+  );
+}
+
+export function IconLink(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M13 18L10.914 20.086C10.133 20.867 8.867 20.867 8.086 20.086L3.914 15.914C3.133 15.133 3.133 13.867 3.914 13.086L6 11" />
+      <path d="M11 6L13.086 3.914C13.867 3.133 15.133 3.133 15.914 3.914L20.086 8.085C20.867 8.867 20.867 10.133 20.086 10.914L18 13" />
+      <path d="M9 15L15 9" />
+    </Icon>
+  );
+}
+
+export function IconCopy(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M15 9V4.25C15 3.56 14.44 3 13.75 3H4.25C3.56 3 3 3.56 3 4.25V13.75C3 14.44 3.56 15 4.25 15H9" />
+      <path d="M19.75 9H10.25C9.56 9 9 9.56 9 10.25V19.75C9 20.44 9.56 21 10.25 21H19.75C20.44 21 21 20.44 21 19.75V10.25C21 9.56 20.44 9 19.75 9Z" />
+    </Icon>
+  );
+}
+
+export function IconPerson(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M15.5 6.5C15.5 8.433 13.933 10 12 10C10.067 10 8.5 8.433 8.5 6.5C8.5 4.567 10.067 3 12 3C13.933 3 15.5 4.567 15.5 6.5Z" />
+      <path d="M12.001 13C8.61 13 6.037 15.014 4.984 17.863C4.575 18.968 5.519 20 6.698 20H17.304C18.483 20 19.427 18.968 19.019 17.863C17.965 15.014 15.392 13 12.001 13Z" />
+    </Icon>
+  );
+}
+
+export function IconPencil(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M18.414 3.914L20.086 5.586C20.867 6.367 20.867 7.633 20.086 8.414L18 10.5L7.793 20.707C7.605 20.895 7.351 21 7.086 21H3V16.914C3 16.649 3.105 16.395 3.293 16.207L13.5 6L15.586 3.914C16.367 3.133 17.633 3.133 18.414 3.914Z" />
+      <path d="M13.5 6L18 10.5" />
+    </Icon>
+  );
+}
+
+export function IconTrash(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M5 6.5L5.872 19.138C5.944 20.186 6.816 21 7.867 21H16.133C17.184 21 18.056 20.186 18.128 19.138L19 6.5" />
+      <path d="M10 11V16" />
+      <path d="M14 11V16" />
+      <path d="M3.5 6H20.5" />
+      <path d="M8.071 5.746C8.423 3.897 10.048 2.5 12 2.5C13.951 2.5 15.576 3.897 15.929 5.746" />
+    </Icon>
+  );
+}
+
 /* Older icons, still used by screens that haven't moved to the ones above. */
 
 type LegacyIconProps = SVGProps<SVGSVGElement>;
@@ -264,81 +370,10 @@ function Svg({ children, ...props }: LegacyIconProps) {
   );
 }
 
-export function ReplyIcon(props: LegacyIconProps) {
-  return (
-    <Svg {...props}>
-      <path d="M20 12a8 8 0 0 1-11.6 7.1L4 20l1-4.1A8 8 0 1 1 20 12z" />
-    </Svg>
-  );
-}
-
-export function RepostIcon(props: LegacyIconProps) {
-  return (
-    <Svg {...props}>
-      <path d="m17 3 3 3-3 3" />
-      <path d="M4 11V9a3 3 0 0 1 3-3h13" />
-      <path d="m7 21-3-3 3-3" />
-      <path d="M20 13v2a3 3 0 0 1-3 3H4" />
-    </Svg>
-  );
-}
-
-export function HeartIcon(props: LegacyIconProps) {
-  return (
-    <Svg {...props}>
-      <path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z" />
-    </Svg>
-  );
-}
-
-export function ViewsIcon(props: LegacyIconProps) {
-  return (
-    <Svg {...props}>
-      <path d="M5 20v-8M12 20V5M19 20v-11" />
-    </Svg>
-  );
-}
-
-export function MoreIcon(props: LegacyIconProps) {
-  return (
-    <Svg {...props}>
-      <circle cx="5" cy="12" r="1.25" fill="currentColor" />
-      <circle cx="12" cy="12" r="1.25" fill="currentColor" />
-      <circle cx="19" cy="12" r="1.25" fill="currentColor" />
-    </Svg>
-  );
-}
-
-export function CopyIcon(props: LegacyIconProps) {
-  return (
-    <Svg {...props}>
-      <rect x="9" y="9" width="11" height="11" rx="2" />
-      <path d="M5 15V5a2 2 0 0 1 2-2h8" />
-    </Svg>
-  );
-}
-
-export function EditIcon(props: LegacyIconProps) {
-  return (
-    <Svg {...props}>
-      <path d="M4 20h4L19 9l-4-4L4 16v4z" />
-      <path d="M13.5 6.5l4 4" />
-    </Svg>
-  );
-}
-
 export function TrashIcon(props: LegacyIconProps) {
   return (
     <Svg {...props}>
       <path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" />
-    </Svg>
-  );
-}
-
-export function PlusIcon(props: LegacyIconProps) {
-  return (
-    <Svg {...props}>
-      <path d="M12 5v14M5 12h14" />
     </Svg>
   );
 }

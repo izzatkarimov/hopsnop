@@ -14,6 +14,11 @@ const fullDate = new Intl.DateTimeFormat("en-US", {
   timeStyle: "short",
 });
 
+const timeOfDay = new Intl.DateTimeFormat("en-US", {
+  hour: "numeric",
+  minute: "2-digit",
+});
+
 const compactNumber = new Intl.NumberFormat("en-US", {
   notation: "compact",
   maximumFractionDigits: 1,
@@ -47,4 +52,22 @@ export function formatFullDate(iso: string): string {
 /** 940, 1.2K, 482.3K. */
 export function formatCount(count: number): string {
   return compactNumber.format(count);
+}
+
+/** "9:41 AM · Nov 16, 2026", in this device's time zone. */
+export function formatTimestamp(iso: string): string {
+  const date = new Date(iso);
+  return `${timeOfDay.format(date)} · ${shortDateWithYear.format(date)}`;
+}
+
+/** The first word of the display name, or the username when it has none. */
+export function firstName(user: { displayName: string; username: string }): string {
+  return user.displayName.trim().split(/\s+/)[0] || user.username;
+}
+
+/** By this device's clock: morning from 5, afternoon from 12, evening from 18. */
+export function greeting(name: string, date: Date): string {
+  const hour = date.getHours();
+  const part = hour >= 5 && hour < 12 ? "morning" : hour >= 12 && hour < 18 ? "afternoon" : "evening";
+  return `Good ${part}, ${name}`;
 }

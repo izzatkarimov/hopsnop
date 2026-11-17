@@ -4,9 +4,9 @@ import { describe, expect, it } from "vitest";
 import { createPost } from "@/lib/posts";
 import type { User } from "@/lib/types";
 import { api, deferred, json } from "@/test/api";
-import { post, viewerAuthor } from "@/test/fixtures";
+import { post, postId, viewerAuthor } from "@/test/fixtures";
 import { account, authState, renderSignedIn } from "@/test/render";
-import { PostComposer } from "./post-composer";
+import { ReplyComposer } from "./reply-composer";
 
 const viewer: User = {
   id: account.id,
@@ -16,14 +16,14 @@ const viewer: User = {
 };
 
 async function publish(content: string) {
-  await createPost(content);
+  await createPost(content, postId(1));
 }
 
-async function setup(kind?: "post" | "reply") {
-  await renderSignedIn(<PostComposer viewer={viewer} kind={kind} onSubmit={publish} />);
+async function setup() {
+  await renderSignedIn(<ReplyComposer viewer={viewer} onSubmit={publish} />);
   const user = userEvent.setup();
-  const text = screen.getByRole("textbox", { name: kind === "reply" ? "Write a reply" : "Write a post" });
-  return { user, text, submit: screen.getByRole("button", { name: kind === "reply" ? "Reply" : "Post" }) };
+  const text = screen.getByRole("textbox", { name: "Write a reply" });
+  return { user, text, submit: screen.getByRole("button", { name: "Reply" }) };
 }
 
 const postRequests = () => api.calls("POST", "/posts");
@@ -40,7 +40,7 @@ function submitTwiceAtOnce(form: HTMLFormElement) {
   });
 }
 
-describe("PostComposer", () => {
+describe("ReplyComposer", () => {
   it("cannot publish an empty or blank text", async () => {
     const { user, text, submit } = await setup();
     expect(submit).toBeDisabled();
@@ -96,8 +96,8 @@ describe("PostComposer", () => {
     await user.click(submit);
 
     await waitFor(() => expect(text).toHaveValue(""));
-    expect(postRequests().map((call) => call.body)).toEqual([{ content: "Hello, Hopsnop" }]);
-    expect(screen.getByRole("status")).toHaveTextContent("Your post was published.");
+    expect(postRequests().map((call) => call.body)).toEqual([{ content: "Hello, Hopsnop", parent_post_id: postId(1) }]);
+    expect(screen.getByRole("status")).toHaveTextContent("Your reply was published.");
   });
 
   it("publishes with Ctrl+Enter", async () => {
@@ -133,7 +133,7 @@ describe("PostComposer", () => {
 
   it("explains that a reply's post is gone", async () => {
     api.on("POST", "/posts", json(404, { detail: "Post not found." }));
-    const { user, text, submit } = await setup("reply");
+    const { user, text, submit } = await setup();
     await user.type(text, "A reply");
 
     await user.click(submit);
@@ -152,7 +152,7 @@ describe("PostComposer", () => {
     submitTwiceAtOnce(submit.closest("form")!);
 
     expect(postRequests()).toHaveLength(1);
-    expect(screen.getByRole("button", { name: "Posting…" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Replying…" })).toBeDisabled();
     expect(text).toHaveAttribute("readonly");
 
     await act(() => answer.respond(json(201, post(1, viewerAuthor))));

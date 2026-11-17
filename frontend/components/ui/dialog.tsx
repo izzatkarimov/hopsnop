@@ -11,7 +11,7 @@ const FOCUSABLE =
 const widths = {
   sm: "max-w-100",
   md: "max-w-120",
-  lg: "max-w-140",
+  lg: "max-w-150",
 };
 
 type DialogProps = {
@@ -75,7 +75,7 @@ export function Dialog({
 
     const focusable = Array.from(
       event.currentTarget.querySelectorAll<HTMLElement>(FOCUSABLE),
-    );
+    ).filter((element) => !element.closest("[hidden], [inert]"));
     if (focusable.length === 0) {
       event.preventDefault();
       return;
@@ -104,10 +104,10 @@ export function Dialog({
         event.preventDefault();
         requestClose();
       }}
-      className={`m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] ${widths[size]} overflow-hidden overscroll-contain rounded-shell bg-transparent p-0 text-primary outline-hidden surface-shell`}
+      className={`m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] ${widths[size]} overscroll-contain rounded-shell bg-transparent p-2 text-primary outline-hidden surface-shell`}
     >
-      <div className="flex max-h-[inherit] flex-col">
-        <header className="grid min-h-14 grid-cols-[1fr_auto_1fr] items-center gap-2 px-2 py-2">
+      <div className="flex max-h-[calc(100dvh-3rem)] flex-col overflow-hidden rounded-tile surface-tile">
+        <header className="grid min-h-14 shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-2 border-b border-edge/6 py-2 pr-5 pl-1">
           <div>
             {dismissible && (
               <Button variant="ghost" onClick={requestClose}>
@@ -115,16 +115,16 @@ export function Dialog({
               </Button>
             )}
           </div>
-          <h2 id={titleId} className="text-center text-control font-semibold">
+          <h2 id={titleId} className="text-center text-body font-semibold">
             {title}
           </h2>
           <div className="flex justify-end text-meta font-medium text-muted">
             {headerEnd}
           </div>
         </header>
-        <div className="min-h-0 overflow-y-auto px-4 pb-4">{children}</div>
+        <div className="min-h-0 overflow-y-auto px-5 pt-5 pb-4">{children}</div>
         {footer && (
-          <footer className="flex flex-wrap justify-end gap-2 border-t border-edge/6 px-4 py-3">
+          <footer className="flex shrink-0 flex-wrap items-center justify-end gap-3 border-t border-edge/6 py-3 pr-3 pl-5">
             {footer}
           </footer>
         )}

@@ -30,6 +30,10 @@
   --mention: #a78bfa;
   --danger: #ff7676;
   --danger-solid: #c93a3f;
+
+  --popover-top: #262323;
+  /* An unseen story; its middle stop is used nowhere else. */
+  --story-ring: linear-gradient(135deg, #2233c4 0%, #8b5cf6 55%, #ff6b9b 100%);
 }
 
 @theme inline {
@@ -57,6 +61,7 @@
   --color-mention: var(--mention);
   --color-danger: var(--danger);
   --color-danger-solid: var(--danger-solid);
+  --color-popover-top: var(--popover-top);
 
   --font-sans: var(--font-bricolage), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
@@ -88,6 +93,7 @@
   --radius-item: 0.75rem;
   --radius-field: 1rem;
   --radius-tile: 1.5rem;
+  --radius-popover: 1.25rem;
   --radius-shell: 2rem;
 
   --shadow-shell:
@@ -96,6 +102,7 @@
   --shadow-raised: 0 4px 8px rgb(0 0 0 / 0.24);
   --shadow-primary: 0 4px 12px rgb(34 51 196 / 0.4);
   --shadow-danger: 0 4px 12px rgb(201 58 63 / 0.32);
+  --shadow-popover: 0 4px 6px rgb(0 0 0 / 0.24), 0 24px 24px rgb(0 0 0 / 0.48);
   --inset-shadow-well: inset 0 4px 8px rgb(0 0 0 / 0.48);
 
   --breakpoint-wide: 68.75rem;
@@ -157,6 +164,20 @@
     transparent 0
   );
   background-size: 4px 4px;
+}
+
+/* Menus and other panels floating over the page. */
+@utility surface-popover {
+  @apply bg-linear-to-b from-popover-top to-tile shadow-popover inset-ring inset-ring-edge/8 inset-shadow-[0_1px_0] inset-shadow-highlight/8;
+}
+
+/* A faint accent light along a tile's top edge. */
+@utility glow-top {
+  background-image: radial-gradient(
+    ellipse 45% 30% at 50% 0,
+    color-mix(in oklab, var(--color-accent) 28%, transparent),
+    transparent
+  );
 }
 
 @utility glow {

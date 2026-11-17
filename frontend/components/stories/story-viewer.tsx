@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
 import type { FocusEvent, KeyboardEvent } from "react";
-import { profileHref } from "@/components/posts/post-item";
+import { profileHref } from "@/components/posts/links";
 import { Avatar } from "@/components/ui/avatar";
 import {
   ChevronLeftIcon,

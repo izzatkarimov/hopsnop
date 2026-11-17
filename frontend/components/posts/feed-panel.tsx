@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Notice } from "@/components/ui/notice";
 import { PostList } from "./post-list";
@@ -13,6 +14,7 @@ type FeedPanelProps = {
   errorTitle?: string;
 };
 
+/** The rows only: the caller puts them in a tile. */
 export function FeedPanel({
   feed,
   handlers,
@@ -39,13 +41,9 @@ export function FeedPanel({
           title={errorTitle}
           description={state.message}
           action={
-            <button
-              type="button"
-              onClick={feed.retry}
-              className="rounded-full bg-accent px-5 py-2 font-semibold text-accent-foreground transition-colors hover:bg-accent-hover"
-            >
+            <Button variant="primary" onClick={feed.retry}>
               Try again
-            </button>
+            </Button>
           }
         />
       </div>
@@ -61,18 +59,11 @@ export function FeedPanel({
       <PostList posts={state.posts} handlers={handlers} />
 
       {state.nextCursor !== null && (
-        <div className="flex flex-col items-center gap-3 px-4 py-6">
-          {state.loadMoreError && (
-            <Notice tone="error">{state.loadMoreError}</Notice>
-          )}
-          <button
-            type="button"
-            onClick={feed.loadMore}
-            disabled={state.loadingMore}
-            className="rounded-full border border-border px-5 py-1.5 text-body font-semibold transition-colors hover:bg-hover disabled:cursor-not-allowed disabled:opacity-50"
-          >
+        <div className="flex flex-col items-center gap-3 px-4 py-4">
+          {state.loadMoreError && <Notice tone="error">{state.loadMoreError}</Notice>}
+          <Button onClick={feed.loadMore} disabled={state.loadingMore}>
             {state.loadingMore ? "Loading…" : "Load more"}
-          </button>
+          </Button>
         </div>
       )}
     </>
@@ -81,9 +72,5 @@ export function FeedPanel({
 
 export function PostNotice({ notice }: { notice: string | null }) {
   if (!notice) return null;
-  return (
-    <div className="border-b border-border px-4 py-3">
-      <Notice tone="info">{notice}</Notice>
-    </div>
-  );
+  return <Notice tone="info">{notice}</Notice>;
 }

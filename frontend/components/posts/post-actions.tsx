@@ -1,47 +1,61 @@
-import type { ComponentType, SVGProps } from "react";
+import type { ComponentType } from "react";
 import Link from "next/link";
-import { HeartIcon, ReplyIcon, RepostIcon } from "@/components/ui/icons";
+import {
+  IconBubble,
+  IconHeart,
+  IconHeartFilled,
+  IconRepost,
+  IconShare,
+} from "@/components/ui/icons";
+import type { IconProps } from "@/components/ui/icons";
 import { formatCount } from "@/lib/format";
 import type { Post } from "@/lib/types";
 
-// Full class names are listed so Tailwind can detect them.
-const tones = {
-  accent: {
-    active: "text-ink",
-    hover: "hover:text-ink",
-    iconHover: "group-hover:bg-accent/10",
-  },
-  like: {
-    active: "text-like",
-    hover: "hover:text-like",
-    iconHover: "group-hover:bg-like/10",
-  },
+/* Full class names are listed so Tailwind can detect them. */
+
+const pillClass =
+  "inline-flex shrink-0 items-center gap-1 rounded-full text-meta tabular-nums focus-ring motion-safe:transition-colors disabled:cursor-default disabled:opacity-60";
+
+const layouts = {
+  // In a list: counts beside the icons.
+  row: { bar: "flex items-center gap-1 pt-1", pill: "px-2 py-1" },
+  // A post's own page: the counts are in the stats line above.
+  detail: { bar: "flex items-center justify-between px-6", pill: "p-2" },
+};
+
+const idleClass = "font-medium text-muted not-disabled:hover:bg-edge/6 not-disabled:hover:text-primary";
+
+const pressedClass = {
+  repost: "bg-success/12 font-semibold text-success",
+  like: "bg-like/12 font-semibold text-like",
 };
 
 type ActionButtonProps = {
   label: string;
   count?: number;
-  icon: ComponentType<SVGProps<SVGSVGElement>>;
-  tone: keyof typeof tones;
-  pressed?: boolean;
-  fillWhenPressed?: boolean;
+  icon: ComponentType<IconProps>;
+  pressedIcon?: ComponentType<IconProps>;
+  tone: keyof typeof pressedClass;
+  pressed: boolean;
+  layout: keyof typeof layouts;
   disabled?: boolean;
   title?: string;
-  onClick?: () => void;
+  onClick: () => void;
 };
 
 function ActionButton({
   label,
   count,
   icon: Icon,
+  pressedIcon: PressedIcon = Icon,
   tone,
   pressed,
-  fillWhenPressed,
+  layout,
   disabled,
   title,
   onClick,
 }: ActionButtonProps) {
-  const { active, hover, iconHover } = tones[tone];
+  const Glyph = pressed ? PressedIcon : Icon;
 
   return (
     <button
@@ -50,19 +64,9 @@ function ActionButton({
       disabled={disabled}
       aria-pressed={pressed}
       title={title}
-      className={`group flex items-center gap-0.5 rounded-full text-sm tabular-nums transition-colors disabled:cursor-default disabled:opacity-60 ${
-        pressed ? active : ""
-      } ${disabled ? "" : hover}`}
+      className={`${pillClass} ${layouts[layout].pill} ${pressed ? pressedClass[tone] : idleClass}`}
     >
-      <span
-        className={`rounded-full p-2 transition-colors ${disabled ? "" : iconHover}`}
-      >
-        <Icon
-          width={18}
-          height={18}
-          fill={pressed && fillWhenPressed ? "currentColor" : "none"}
-        />
-      </span>
+      <Glyph />
       <span className="sr-only">
         {label}
         {count !== undefined && ", "}
@@ -75,55 +79,67 @@ function ActionButton({
 type PostActionsProps = {
   post: Post;
   replyHref: string;
+  layout?: keyof typeof layouts;
+  /** No likes or reposts without a session. */
   disabled?: boolean;
   onToggleLike: () => void;
   onToggleRepost: () => void;
+  onShare: () => void;
 };
 
 export function PostActions({
   post,
   replyHref,
+  layout = "row",
   disabled,
   onToggleLike,
   onToggleRepost,
+  onShare,
 }: PostActionsProps) {
   const signInHint = disabled ? "Log in to like or repost" : undefined;
+  const showCounts = layout === "row";
 
   return (
-    <div className="-ml-2 mt-1 flex max-w-md items-center justify-between text-muted">
+    <div className={layouts[layout].bar}>
       {/* A link: replying happens on the post's page. No reply count exists. */}
       <Link
         href={replyHref}
         aria-label="Reply"
-        className={`group flex items-center rounded-full transition-colors ${tones.accent.hover}`}
+        className={`${pillClass} ${layouts[layout].pill} ${idleClass}`}
       >
-        <span
-          className={`rounded-full p-2 transition-colors ${tones.accent.iconHover}`}
-        >
-          <ReplyIcon width={18} height={18} />
-        </span>
+        <IconBubble />
       </Link>
       <ActionButton
         label="Repost"
-        count={post.repostCount}
-        icon={RepostIcon}
-        tone="accent"
+        count={showCounts ? post.repostCount : undefined}
+        icon={IconRepost}
+        tone="repost"
         pressed={post.repostedByViewer}
+        layout={layout}
         disabled={disabled}
         title={signInHint}
         onClick={onToggleRepost}
       />
       <ActionButton
         label="Like"
-        count={post.likeCount}
-        icon={HeartIcon}
+        count={showCounts ? post.likeCount : undefined}
+        icon={IconHeart}
+        pressedIcon={IconHeartFilled}
         tone="like"
         pressed={post.likedByViewer}
-        fillWhenPressed
+        layout={layout}
         disabled={disabled}
         title={signInHint}
         onClick={onToggleLike}
       />
+      <button
+        type="button"
+        aria-label="Share"
+        onClick={onShare}
+        className={`${pillClass} ${layouts[layout].pill} ${idleClass}`}
+      >
+        <IconShare />
+      </button>
     </div>
   );
 }

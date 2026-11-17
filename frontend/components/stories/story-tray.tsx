@@ -1,29 +1,25 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { MouseEvent, ReactNode } from "react";
+import type { MouseEvent } from "react";
 import { useCurrentUser } from "@/components/auth/auth-provider";
 import { Avatar } from "@/components/ui/avatar";
-import { PlusIcon } from "@/components/ui/icons";
+import { Button } from "@/components/ui/button";
+import { IconPlus } from "@/components/ui/icons";
 import type { StoryGroup } from "@/lib/stories";
 import { AddStoryDialog } from "./add-story-dialog";
 import { StoryViewer } from "./story-viewer";
 import { useStories } from "./use-stories";
 
-function Ring({ state, children }: { state: "new" | "seen" | "none"; children: ReactNode }) {
-  const ring = {
-    new: "border-[3px] border-accent p-0.5",
-    seen: "border-2 border-border p-[3px]",
-    none: "p-[5px]",
-  };
-  return <span className={`block rounded-full ${ring[state]}`}>{children}</span>;
-}
-
 function TraySkeleton() {
   return Array.from({ length: 4 }, (_, index) => (
-    <li key={index} aria-hidden="true" className="w-18 shrink-0 animate-pulse">
-      <span className="mx-auto block size-16.5 rounded-full bg-hover" />
-      <span className="mx-auto mt-1.5 block h-2.5 w-12 rounded bg-hover" />
+    <li
+      key={index}
+      aria-hidden="true"
+      className="flex w-18 shrink-0 flex-col items-center gap-2 motion-safe:animate-pulse"
+    >
+      <span className="block size-16 rounded-full bg-edge/6" />
+      <span className="block h-3 w-12 rounded-full bg-edge/6" />
     </li>
   ));
 }
@@ -59,25 +55,24 @@ export function StoryTray() {
   }
 
   return (
-    <section aria-label="Stories" className="border-b border-border">
-      <ul className="flex items-start gap-3 overflow-x-auto px-4 py-3">
-        <li className="w-18 shrink-0">
-          <div className="relative mx-auto w-fit">
+    <section aria-label="Stories" className="rounded-tile surface-tile glow-top">
+      <ul className="flex items-start gap-3 overflow-x-auto p-4">
+        <li className="flex w-18 shrink-0 flex-col items-center gap-2">
+          <div className="relative">
+            {/* No ring for one's own stories: the badge says what can be done. */}
             {own ? (
               <button
                 type="button"
                 aria-label="Your story"
                 onClick={(event) => open(own, event)}
-                className="block rounded-full"
+                className="block rounded-full p-1 focus-ring"
               >
-                <Ring state="new">
-                  <Avatar user={viewer} size="story" />
-                </Ring>
+                <Avatar user={viewer} size="story" />
               </button>
             ) : (
-              <Ring state="none">
+              <span className="block p-1">
                 <Avatar user={viewer} size="story" />
-              </Ring>
+              </span>
             )}
             {/* The same button with stories or without, so focus can come back to it. */}
             <button
@@ -85,18 +80,14 @@ export function StoryTray() {
               type="button"
               aria-label="Add a story"
               onClick={() => setAdding(true)}
-              className={`absolute rounded-full ${own ? "-right-0.5 -bottom-0.5" : "inset-0"}`}
+              className={`absolute rounded-full focus-ring ${own ? "right-0 bottom-0 size-6" : "inset-0"}`}
             >
-              <span
-                className={`flex size-6 items-center justify-center rounded-full border-2 border-background bg-accent text-accent-foreground ${
-                  own ? "" : "absolute -right-0.5 -bottom-0.5"
-                }`}
-              >
-                <PlusIcon width={14} height={14} strokeWidth={2.5} />
+              <span className="absolute right-0 bottom-0 flex size-6 items-center justify-center rounded-full bg-accent text-white inset-ring-2 inset-ring-tile inset-shadow-[0_1px_0] inset-shadow-highlight/24">
+                <IconPlus size={16} />
               </span>
             </button>
           </div>
-          <p aria-hidden="true" className="mt-1 truncate text-center text-xs">
+          <p aria-hidden="true" className="w-full truncate text-center text-meta font-medium text-primary">
             Your story
           </p>
         </li>
@@ -104,17 +95,11 @@ export function StoryTray() {
         {stories.status === "loading" && <TraySkeleton />}
 
         {stories.status === "error" && (
-          <li className="flex shrink-0 items-center gap-2 self-center text-sm">
-            <span role="alert" className="text-muted">
+          <li className="flex shrink-0 items-center gap-3 self-center">
+            <span role="alert" className="text-body text-secondary">
               Couldn&apos;t load stories.
             </span>
-            <button
-              type="button"
-              onClick={stories.retry}
-              className="rounded-full border border-border px-3 py-1 font-semibold transition-colors hover:bg-hover"
-            >
-              Try again
-            </button>
+            <Button onClick={stories.retry}>Try again</Button>
           </li>
         )}
 
@@ -126,12 +111,18 @@ export function StoryTray() {
                 group.hasUnviewed ? "new" : "all seen"
               }`}
               onClick={(event) => open(group, event)}
-              className="flex w-full flex-col items-center gap-1 rounded-lg"
+              className="flex w-full flex-col items-center gap-2 rounded-item focus-ring"
             >
-              <Ring state={group.hasUnviewed ? "new" : "seen"}>
-                <Avatar user={group.author} size="story" />
-              </Ring>
-              <span className="w-full truncate text-center text-xs">
+              <Avatar
+                user={group.author}
+                size="story"
+                ring={group.hasUnviewed ? "unseen" : "seen"}
+              />
+              <span
+                className={`w-full truncate text-center text-meta ${
+                  group.hasUnviewed ? "font-medium text-primary" : "text-muted"
+                }`}
+              >
                 {group.author.displayName}
               </span>
             </button>

@@ -156,3 +156,14 @@ export async function setFollow(
   }
   return response.following;
 }
+
+/** Always false for a signed-out visitor. */
+export async function getFollowStatus(username: string): Promise<boolean> {
+  const response = await apiRequest<FollowResponse>(
+    `/users/${encodeURIComponent(username)}/follow-status`,
+  );
+  if (typeof response?.following !== "boolean") {
+    throw new ApiError("server", null, "The server sent an unexpected answer.");
+  }
+  return response.following;
+}

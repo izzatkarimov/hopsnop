@@ -2,6 +2,8 @@
 
 import { useRef, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
+import { Button } from "@/components/ui/button";
+import { IconCheck } from "@/components/ui/icons";
 import { isApiError, unexpectedErrorMessage } from "@/lib/api";
 import { setFollow } from "@/lib/profiles";
 
@@ -44,22 +46,18 @@ export function FollowButton({ username, following, onChange }: FollowButtonProp
   }
 
   return (
-    <div className="flex min-w-0 flex-col items-end gap-2">
-      <button
-        type="button"
+    <div className="flex min-w-0 shrink-0 flex-col items-end gap-2">
+      <Button
         onClick={handleClick}
         disabled={pending}
         aria-pressed={following}
-        className={`rounded-full px-4 py-1.5 text-body font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
-          following
-            ? "border border-border hover:bg-hover"
-            : "border border-transparent bg-accent text-accent-foreground hover:bg-accent-hover disabled:hover:bg-accent"
-        }`}
+        variant={following ? "secondary" : "primary"}
+        icon={following ? <IconCheck /> : undefined}
       >
         {following ? "Following" : "Follow"}
-      </button>
+      </Button>
       {error && (
-        <p role="alert" className="text-right text-sm text-danger">
+        <p role="alert" className="text-right text-meta font-medium text-danger">
           {error}
         </p>
       )}

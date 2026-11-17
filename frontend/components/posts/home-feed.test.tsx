@@ -6,9 +6,18 @@ import { api, deferred, json, noContent } from "@/test/api";
 import { alice, bob, page, post, postId, storyPage, viewerAuthor } from "@/test/fixtures";
 import { authState, renderSignedIn } from "@/test/render";
 import { HomeFeed } from "./home-feed";
+import { NewPostProvider } from "./new-post";
+
+const home = (
+  <RequireAuth>
+    <NewPostProvider>
+      <HomeFeed />
+    </NewPostProvider>
+  </RequireAuth>
+);
 
 const router = vi.hoisted(() => ({ replace: vi.fn(), push: vi.fn() }));
-vi.mock("next/navigation", () => ({ useRouter: () => router }));
+vi.mock("next/navigation", () => ({ useRouter: () => router, usePathname: () => "/" }));
 
 const byAlice = post(1, alice, { content: "Alice's post", like_count: 2, repost_count: 1 });
 const mine = post(2, viewerAuthor, { content: "My own post" });
@@ -17,11 +26,7 @@ const byBob = post(3, bob, { content: "Bob's post" });
 async function setup(...feed: Parameters<typeof api.on>[2][]) {
   api.on("GET", "/stories?limit=50", json(200, storyPage([])));
   api.on("GET", "/feed", ...feed);
-  await renderSignedIn(
-    <RequireAuth>
-      <HomeFeed />
-    </RequireAuth>,
-  );
+  await renderSignedIn(home);
   return { user: userEvent.setup() };
 }
 
@@ -130,8 +135,9 @@ describe("HomeFeed: loading the feed", () => {
     const { user } = await setup(json(200, page([byAlice])));
     await postsShown();
 
+    await user.click(screen.getByRole("button", { name: "What's new, Test?" }));
     await user.type(screen.getByRole("textbox", { name: "Write a post" }), "Just written");
-    await user.click(screen.getByRole("button", { name: "Post" }));
+    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Post" }));
 
     await waitFor(() => expect(screen.getAllByRole("article")).toHaveLength(2));
     expect(within(screen.getAllByRole("article")[0]).getByText("Just written")).toBeInTheDocument();
@@ -153,11 +159,7 @@ describe("HomeFeed: loading the feed", () => {
   it("keeps the feed working when the stories cannot be loaded", async () => {
     api.on("GET", "/stories?limit=50", json(503, { detail: "Unavailable." }));
     api.on("GET", "/feed", json(200, page([byAlice])));
-    await renderSignedIn(
-      <RequireAuth>
-        <HomeFeed />
-      </RequireAuth>,
-    );
+    await renderSignedIn(home);
     const user = userEvent.setup();
 
     expect(await postsShown()).toEqual(["Post by Alice Example"]);
@@ -270,6 +272,7 @@ describe("HomeFeed: one's own posts", () => {
   }
 
   it("offers to delete only the viewer's own posts", async () => {
+    api.on("GET", `/users/${alice.username}/follow-status`, json(200, { following: false }));
     const { user } = await setup(json(200, page([byAlice, mine])));
     await postsShown();
 
@@ -353,5 +356,50 @@ describe("HomeFeed: one's own posts", () => {
 
     expect(within(menu).queryByRole("menuitem", { name: "Edit post" })).not.toBeInTheDocument();
     expect(within(menu).getByRole("menuitem", { name: "Delete post" })).toBeInTheDocument();
+  });
+});
+
+describe("HomeFeed: the header and the composer", () => {
+  it.each([
+    [8, "Good morning, Test"],
+    [14, "Good afternoon, Test"],
+    [21, "Good evening, Test"],
+    [2, "Good evening, Test"],
+  ])("greets the viewer by first name at %i:00 on this device's clock", async (hour, text) => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 10, 17, hour, 0));
+    await setup(json(200, page([])));
+
+    expect(screen.getByText(text)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "Home" })).toBeInTheDocument();
+  });
+
+  it("switches feeds with the arrow keys, as tabs do", async () => {
+    api.on("GET", "/feed/following", json(200, page([byBob])));
+    const { user } = await setup(json(200, page([byAlice])));
+    await postsShown();
+
+    screen.getByRole("tab", { name: "For you" }).focus();
+    await user.keyboard("{ArrowRight}");
+
+    expect(screen.getByRole("tab", { name: "Following" })).toHaveFocus();
+    expect(screen.getByRole("tab", { name: "Following" })).toHaveAttribute("aria-selected", "true");
+    expect(await screen.findByText("Bob's post")).toBeInTheDocument();
+    expect(screen.getByRole("tabpanel", { name: "Following" })).toBeInTheDocument();
+
+    await user.keyboard("{Home}");
+    expect(screen.getByRole("tabpanel", { name: "For you" })).toHaveTextContent("Alice's post");
+    expect(api.calls("GET", "/feed/following")).toHaveLength(1);
+  });
+
+  it("opens the New post dialog from the composer, whose Post pill is only decoration", async () => {
+    const { user } = await setup(json(200, page([])));
+    const composer = screen.getByRole("button", { name: "What's new, Test?" });
+
+    expect(within(composer).getByText("Post")).toHaveAttribute("aria-hidden", "true");
+    expect(composer.querySelectorAll("button, a, input, [tabindex]")).toHaveLength(0);
+    await user.click(composer);
+
+    expect(screen.getByRole("dialog", { name: "New post" })).toBeInTheDocument();
   });
 });

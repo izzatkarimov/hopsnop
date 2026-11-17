@@ -60,12 +60,13 @@ Tailwind's theme, so a light theme would only have to redefine those variables.
 
 | Kind | Classes |
 | --- | --- |
-| Surfaces | `bg-bg` (the page, `#0f0e0e`), `bg-tile`, `bg-well`, and the utilities `surface-shell`, `surface-tile`, `surface-well`, `surface-raised`, `surface-glass`, `surface-primary`, `surface-danger`, which add each surface's border, highlight and shadow |
+| Surfaces | `bg-bg` (the page, `#0f0e0e`), `bg-tile`, `bg-well`, and the utilities `surface-shell`, `surface-tile`, `surface-well`, `surface-raised`, `surface-glass`, `surface-popover` (menus), `surface-primary`, `surface-danger`, which add each surface's border, highlight and shadow |
 | Text | `text-primary`, `text-secondary`, `text-muted` |
 | Colours | `ink` (links, focus, blue text), `accent` (primary buttons only, never text), `like`, `success`, `warning`, `mention`, `danger`, `danger-solid` (destructive buttons), `edge` (borders and hairlines, used at 4 to 12%), `highlight` |
 | Type | `text-meta` 12/16, `text-body` 16/24, `text-control` 16/20, `text-lead` 20/28, `text-title` 24/32, `text-display` 28/36, in Bricolage Grotesque; `font-mono` (JetBrains Mono) only for recovery codes and the two-factor key. Both are loaded with `next/font` |
-| Radii | `rounded-chip` 8, `rounded-item` 12, `rounded-field` 16, `rounded-tile` 24, `rounded-shell` 32; buttons and pills `rounded-full` |
-| Shadows | `shadow-shell`, `shadow-raised`, `shadow-primary`, `shadow-danger`, `inset-shadow-well` |
+| Radii | `rounded-chip` 8, `rounded-item` 12, `rounded-field` 16, `rounded-popover` 20, `rounded-tile` 24, `rounded-shell` 32; buttons and pills `rounded-full` |
+| Shadows | `shadow-shell`, `shadow-raised`, `shadow-primary`, `shadow-danger`, `shadow-popover`, `inset-shadow-well` |
+| Story ring | `--story-ring`, the gradient around an author with an unseen story; its colours are used nowhere else |
 | Widths | Tailwind's breakpoints, plus `wide` (1100px); `max-w-main` (640px) for the page column |
 
 - Spacing follows a 4px grid. Borders are inset rings, so a 1px border never
@@ -73,8 +74,9 @@ Tailwind's theme, so a light theme would only have to redefine those variables.
   corners stay concentric.
 - Every control shows `focus-ring` when focused from the keyboard: an `ink`
   border and a 4px `accent` ring. Anything else focusable gets an `ink` outline.
-- The dotted page background (`dot-grid`) and the glow behind the sign-in card
-  (`glow`) are CSS gradients: no image is loaded.
+- The dotted page background (`dot-grid`), the glow behind the sign-in card
+  (`glow`) and the light along the stories tile (`glow-top`) are CSS
+  gradients: no image is loaded.
 - Transitions run only with `motion-safe:`, so they stop for anyone who asks
   for reduced motion.
 - The older colour names (`background`, `foreground`, `border`, `hover`,
@@ -102,8 +104,19 @@ the navigation, New post, the signed-in user and Log out; the page in a 640px
 column; and from 1100px a 240px panel on the right, which shrinks the column
 rather than overflow. Between 640 and 1024px the sidebar is a 72px rail of
 icons. Below 640px there is a top bar with Settings and a floating bar at the
-bottom with Home, Search, New post and Profile. New post opens the composer on
-Home, from any page.
+bottom with Home, Search, New post and Profile.
+
+**Posting** (`components/posts/`). New post, in the sidebar, the phone bar or
+Home's "What's new" tile, opens a dialog on whatever page is showing. Its ring
+fills towards the 300-character limit the backend counts (Unicode code points,
+after trimming), turns `warning` within 20 characters, where the count also
+shows, and `danger` over it. Closing it with unsent text asks first, inside the
+dialog. A published post goes to the top of Home's For you, and from another
+page the dialog goes Home. The reply box on a post's page follows the same
+rules. Copy link, Copy text and Share use only the post's plain address; Share
+uses the system share sheet when the browser has one and copies the link
+otherwise, and every outcome, including a refused clipboard, is said in a line
+under the post.
 
 ## Sessions
 
@@ -175,9 +188,10 @@ user's active stories and those of the people they follow, which
 `GET /stories` returns as one flat list, newest first. The list is loaded
 once, every page of it up to 250 stories, and grouped by author in the
 browser: one's own first as "Your story", then the others by their newest
-story. A thick ring in the accent colour marks an author with a story not
-viewed yet, and a thin muted one an author whose stories are all viewed; the
-button's name says the same. The row loads on its own, and if it fails it
+story. A 2px gradient ring (`--story-ring`) marks an author with a story not
+viewed yet, and a muted one an author whose stories are all viewed; the
+button's name says the same. One's own entry has no ring, only the + badge for
+adding a story. The row loads on its own, and if it fails it
 offers to try again without touching the feed.
 
 The viewer is a modal `<dialog>`. It plays an author's stories oldest first,

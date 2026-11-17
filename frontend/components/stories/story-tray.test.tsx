@@ -34,7 +34,7 @@ function entries(): (string | null)[] {
 }
 
 function ringOf(name: string) {
-  return screen.getByRole("button", { name }).querySelector("span");
+  return screen.getByRole("button", { name }).querySelector("[data-ring]");
 }
 
 describe("StoryTray", () => {
@@ -67,9 +67,8 @@ describe("StoryTray", () => {
 
     expect(await screen.findByRole("button", { name: "Stories by Alice Example, new" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Stories by Bob Example, all seen" })).toBeInTheDocument();
-    expect(ringOf("Stories by Alice Example, new")).toHaveClass("border-accent");
-    expect(ringOf("Stories by Bob Example, all seen")).toHaveClass("border-border");
-    expect(ringOf("Stories by Bob Example, all seen")).not.toHaveClass("border-accent");
+    expect(ringOf("Stories by Alice Example, new")).toHaveAttribute("data-ring", "unseen");
+    expect(ringOf("Stories by Bob Example, all seen")).toHaveAttribute("data-ring", "seen");
   });
 
   it("shows only the add button, without a ring, when nobody has a story", async () => {
@@ -78,14 +77,15 @@ describe("StoryTray", () => {
     await waitFor(() => expect(screen.queryByText("Loading stories…")).not.toBeInTheDocument());
     expect(entries()).toEqual(["Add a story"]);
     expect(within(tray()).queryByRole("button", { name: "Your story" })).not.toBeInTheDocument();
-    expect(tray().querySelector(".border-accent")).toBeNull();
+    expect(tray().querySelector("[data-ring]")).toBeNull();
   });
 
   it("gives one's own stories a button of their own next to the add button", async () => {
     await setup(json(200, storyPage([story(1, viewerAuthor)])));
 
     expect(await screen.findByRole("button", { name: "Your story" })).toBeInTheDocument();
-    expect(ringOf("Your story")).toHaveClass("border-accent");
+    // One's own stories wear no ring; the add badge sits on the picture.
+    expect(ringOf("Your story")).toBeNull();
     expect(screen.getByRole("button", { name: "Add a story" })).toBeInTheDocument();
   });
 

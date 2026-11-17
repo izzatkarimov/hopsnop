@@ -1,19 +1,29 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth/auth-provider";
+import { useHasNavigated } from "@/components/layout/navigation-history";
+import { PageHeader } from "@/components/layout/page-header";
+import { FollowButton } from "@/components/profile/follow-button";
+import { Button, ButtonLink } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
+import { IconButton } from "@/components/ui/icon-button";
+import { IconArrowLeft } from "@/components/ui/icons";
+import { TextLink } from "@/components/ui/text-link";
 import { unexpectedErrorMessage } from "@/lib/api";
 import { createPost, getPost, listReplies } from "@/lib/posts";
+import { getFollowStatus } from "@/lib/profiles";
 import type { Post } from "@/lib/types";
 import { FeedPanel, PostNotice } from "./feed-panel";
-import { PostComposer } from "./post-composer";
-import { PostItem, postHref } from "./post-item";
+import { postHref } from "./links";
+import { PostItem } from "./post-item";
 import { PostSkeleton } from "./post-skeleton";
+import { ReplyComposer } from "./reply-composer";
 import { useFeed } from "./use-feed";
 import { usePostActions } from "./use-post-actions";
-import type { PostContainer } from "./use-post-actions";
+import type { PostContainer, PostHandlers } from "./use-post-actions";
 
 type Loaded =
   | { status: "loading" }
@@ -22,9 +32,6 @@ type Loaded =
   /** The request failed; the post may well exist. */
   | { status: "error"; message: string }
   | { status: "ready"; post: Post };
-
-const buttonClass =
-  "rounded-full bg-accent px-5 py-2 font-semibold text-accent-foreground transition-colors hover:bg-accent-hover";
 
 function useLoadedPost(postId: string | null, attempt: number) {
   const [state, setState] = useState<Loaded>({ status: "loading" });
@@ -64,6 +71,45 @@ function useLoadedPost(postId: string | null, attempt: number) {
   return { state, setState, container };
 }
 
+/** Back within the site when the tab came from here, otherwise Home. */
+function BackButton() {
+  const router = useRouter();
+  const navigated = useHasNavigated();
+
+  return (
+    <IconButton
+      label="Back"
+      icon={<IconArrowLeft />}
+      variant="secondary"
+      size="lg"
+      onClick={() => (navigated ? router.back() : router.push("/"))}
+    />
+  );
+}
+
+/** Shows only the backend's answer; nothing while it's unknown or couldn't be had. */
+function AuthorFollow({ username }: { username: string }) {
+  const [following, setFollowing] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    let ignore = false;
+    getFollowStatus(username).then(
+      (answer) => {
+        if (!ignore) setFollowing(answer);
+      },
+      () => {
+        if (!ignore) setFollowing(null);
+      },
+    );
+    return () => {
+      ignore = true;
+    };
+  }, [username]);
+
+  if (following === null) return null;
+  return <FollowButton username={username} following={following} onChange={setFollowing} />;
+}
+
 /** A visitor is asked to log in; the backend refuses a reply without a session. */
 export function PostThread({ postId }: { postId: string }) {
   const auth = useAuth();
@@ -93,109 +139,135 @@ export function PostThread({ postId }: { postId: string }) {
     replies.addPost(await createPost(content, postId));
   }
 
+  const header = (
+    <PageHeader
+      title="Post"
+      eyebrow={post?.author.displayName ?? ""}
+      leading={viewer ? <BackButton /> : undefined}
+    />
+  );
+
   if (main.state.status === "loading") {
     return (
-      <div role="status">
-        <span className="sr-only">Loading post…</span>
-        <PostSkeleton />
-      </div>
+      <>
+        {header}
+        <Card surface="shell">
+          <Card role="status">
+            <span className="sr-only">Loading post…</span>
+            <PostSkeleton />
+          </Card>
+        </Card>
+      </>
     );
   }
 
   if (main.state.status === "error") {
     return (
-      <div role="alert">
-        <EmptyState
-          title="Couldn't load this post"
-          description={main.state.message}
-          action={
-            <button
-              type="button"
-              onClick={() => {
-                main.setState({ status: "loading" });
-                setAttempt((current) => current + 1);
-              }}
-              className={buttonClass}
-            >
-              Try again
-            </button>
-          }
-        />
-      </div>
+      <>
+        {header}
+        <Card role="alert">
+          <EmptyState
+            title="Couldn't load this post"
+            description={main.state.message}
+            action={
+              <Button
+                variant="primary"
+                onClick={() => {
+                  main.setState({ status: "loading" });
+                  setAttempt((current) => current + 1);
+                }}
+              >
+                Try again
+              </Button>
+            }
+          />
+        </Card>
+      </>
     );
   }
 
   if (main.state.status === "unavailable") {
     return (
       <>
+        {header}
         <PostNotice notice={notice} />
-        <EmptyState
-          title="This post is unavailable"
-          description="It may have been deleted, or the link may be wrong."
-          action={
-            // Home needs a session: a visitor would only be sent on to the login page.
-            viewer ? (
-              <Link href="/" className={buttonClass}>
-                Go to Home
-              </Link>
-            ) : (
-              <Link href="/login" className={buttonClass}>
-                Log in
-              </Link>
-            )
-          }
-        />
+        <Card>
+          <EmptyState
+            title="This post is unavailable"
+            description="It may have been deleted, or the link may be wrong."
+            action={
+              // Home needs a session: a visitor would only be sent on to the login page.
+              viewer ? (
+                <ButtonLink href="/" variant="primary">
+                  Go to Home
+                </ButtonLink>
+              ) : (
+                <ButtonLink href="/login" variant="primary">
+                  Log in
+                </ButtonLink>
+              )
+            }
+          />
+        </Card>
       </>
     );
   }
 
+  const isOwnPost = viewer !== null && viewer.id === main.state.post.author.id;
+
   return (
     <>
+      {header}
       <PostNotice notice={notice} />
 
-      {parentId !== null && (
-        <ParentPost
-          parentId={parentId}
-          state={parent.state}
-          handlers={handlers}
-          onRetry={() => {
-            parent.setState({ status: "loading" });
-            setParentAttempt((current) => current + 1);
-          }}
-        />
-      )}
-
-      <PostItem post={main.state.post} handlers={handlers} replyHref="#reply" />
-
-      {/* Below the sticky header when the reply control scrolls here. */}
-      <div id="reply" className="scroll-mt-32">
-        {viewer ? (
-          <PostComposer viewer={viewer} kind="reply" onSubmit={reply} />
-        ) : (
-          <p className="border-b border-border px-4 py-3 text-body">
-            <Link
-              href="/login"
-              className="font-semibold text-ink hover:underline"
-            >
-              Log in to reply
-            </Link>
-          </p>
-        )}
-      </div>
-
-      <section aria-label="Replies">
-        <FeedPanel
-          feed={replies}
-          handlers={handlers}
-          errorTitle="Couldn't load replies"
-          empty={
-            <EmptyState
-              title="No replies yet"
-              description="Be the first to reply."
+      <Card surface="shell">
+        {parentId !== null && (
+          <Card>
+            <ParentPost
+              parentId={parentId}
+              state={parent.state}
+              handlers={handlers}
+              onRetry={() => {
+                parent.setState({ status: "loading" });
+                setParentAttempt((current) => current + 1);
+              }}
             />
-          }
-        />
-      </section>
+          </Card>
+        )}
+
+        <Card>
+          <PostItem
+            post={main.state.post}
+            handlers={handlers}
+            replyHref="#reply"
+            layout="detail"
+            authorAction={
+              viewer && !isOwnPost ? (
+                <AuthorFollow username={main.state.post.author.username} />
+              ) : undefined
+            }
+          />
+        </Card>
+
+        <Card id="reply" className="scroll-mt-6">
+          {viewer ? (
+            <ReplyComposer viewer={viewer} onSubmit={reply} />
+          ) : (
+            <p className="px-4 py-3 text-body">
+              <TextLink href="/login">Log in to reply</TextLink>
+            </p>
+          )}
+        </Card>
+
+        <Card as="section" aria-label="Replies" className="py-1">
+          <FeedPanel
+            feed={replies}
+            handlers={handlers}
+            errorTitle="Couldn't load replies"
+            empty={<EmptyState title="No replies yet" description="Be the first to reply." />}
+          />
+        </Card>
+      </Card>
     </>
   );
 }
@@ -203,7 +275,7 @@ export function PostThread({ postId }: { postId: string }) {
 type ParentPostProps = {
   parentId: string;
   state: Loaded;
-  handlers: Parameters<typeof PostItem>[0]["handlers"];
+  handlers: PostHandlers;
   onRetry: () => void;
 };
 
@@ -222,22 +294,16 @@ function ParentPost({ parentId, state, handlers, onRetry }: ParentPostProps) {
   }
 
   return (
-    <p className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-border px-4 py-3 text-sm text-muted">
+    <p className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 text-body text-secondary">
       {state.status === "unavailable" ? (
         "This is a reply to a post that was deleted or is no longer available."
       ) : (
         <>
           <span role="alert">Couldn&apos;t load the post this replies to.</span>
-          <button
-            type="button"
-            onClick={onRetry}
-            className="font-semibold text-ink hover:underline"
-          >
+          <Button variant="ghost" onClick={onRetry}>
             Try again
-          </button>
-          <Link href={postHref(parentId)} className="hover:underline">
-            Open it
-          </Link>
+          </Button>
+          <TextLink href={postHref(parentId)}>Open it</TextLink>
         </>
       )}
     </p>

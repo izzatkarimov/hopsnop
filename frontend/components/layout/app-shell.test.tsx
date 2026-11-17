@@ -3,9 +3,8 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { RequireAuth } from "@/components/auth/require-auth";
-import { PostComposer } from "@/components/posts/post-composer";
 import { api, noContent } from "@/test/api";
-import { account, authState, renderSignedIn } from "@/test/render";
+import { authState, renderSignedIn } from "@/test/render";
 import { AppShell } from "./app-shell";
 
 const nav = vi.hoisted(() => ({
@@ -24,14 +23,7 @@ beforeEach(() => {
   nav.router.push.mockImplementation((href: string) => nav.go(href));
 });
 
-const viewer = {
-  id: account.id,
-  username: account.username,
-  displayName: account.display_name,
-  avatarUrl: null,
-};
-
-/** Home has the composer; any other page doesn't. */
+/** Stands in for the pages, following the router. */
 function Pages() {
   const [pathname, setPathname] = useState(nav.pathname);
   useEffect(() => {
@@ -41,11 +33,7 @@ function Pages() {
     };
   }, []);
 
-  return pathname === "/" ? (
-    <PostComposer viewer={viewer} onSubmit={async () => {}} />
-  ) : (
-    <p>Another page</p>
-  );
+  return <p>{pathname === "/" ? "Home page" : "Another page"}</p>;
 }
 
 async function renderShell() {
@@ -100,33 +88,29 @@ describe("AppShell", () => {
     expect(screen.getByRole("main")).toHaveAttribute("id", "main-content");
   });
 
-  it("opens Home's composer from New post", async () => {
+  it("opens the New post dialog from the sidebar, on any page, without leaving it", async () => {
+    nav.pathname = "/settings";
     const user = await renderShell();
 
     await user.click(screen.getAllByRole("button", { name: "New post" })[0]);
 
-    expect(screen.getByLabelText("Write a post")).toHaveFocus();
+    expect(screen.getByRole("dialog", { name: "New post" })).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Write a post" })).toHaveFocus();
+    expect(screen.getByText("Another page")).toBeInTheDocument();
     expect(nav.router.push).not.toHaveBeenCalled();
   });
 
-  it("goes to Home from another page and opens the composer there", async () => {
-    nav.pathname = "/settings";
-    const user = await renderShell();
-    expect(screen.getByText("Another page")).toBeInTheDocument();
-
-    await user.click(screen.getAllByRole("button", { name: "New post" })[0]);
-
-    expect(nav.router.push).toHaveBeenCalledWith("/");
-    await waitFor(() => expect(screen.getByLabelText("Write a post")).toHaveFocus());
-  });
-
-  it("offers New post on the phone bar too", async () => {
+  it("opens it from the phone bar too, and gives focus back on closing", async () => {
     const user = await renderShell();
     const bars = screen.getAllByRole("navigation", { name: "Primary" });
+    const button = within(bars[1]).getByRole("button", { name: "New post" });
 
-    await user.click(within(bars[1]).getByRole("button", { name: "New post" }));
+    await user.click(button);
+    expect(screen.getByRole("dialog", { name: "New post" })).toBeInTheDocument();
+    await user.keyboard("{Escape}");
 
-    expect(screen.getByLabelText("Write a post")).toHaveFocus();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(button).toHaveFocus();
   });
 
   it("shows who is signed in, linking to their profile", async () => {

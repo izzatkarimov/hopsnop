@@ -4,7 +4,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import Link from "next/link";
 import { useAuth } from "@/components/auth/auth-provider";
-import { profileHref } from "@/components/posts/post-item";
+import { profileHref } from "@/components/posts/links";
 import { Avatar } from "@/components/ui/avatar";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Field } from "@/components/ui/field";

@@ -1,11 +1,14 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { api, json } from "@/test/api";
 import { alice, bob, page, post, postId, viewerAuthor } from "@/test/fixtures";
 import { renderSignedIn } from "@/test/render";
 import { renderSignedOut } from "@/test/session";
 import { PostThread } from "./post-thread";
+
+const router = vi.hoisted(() => ({ back: vi.fn(), push: vi.fn(), replace: vi.fn() }));
+vi.mock("next/navigation", () => ({ useRouter: () => router }));
 
 const main = post(1, alice, { content: "The post itself" });
 const reply1 = post(11, bob, { content: "First reply", parent_post_id: postId(1), is_reply: true });
@@ -14,6 +17,8 @@ const reply2 = post(12, viewerAuthor, { content: "Second reply", parent_post_id:
 function thread(postResponse: object, replies: object = page([reply1, reply2])) {
   api.on("GET", `/posts/${postId(1)}`, json(200, postResponse));
   api.on("GET", `/posts/${postId(1)}/replies`, json(200, replies));
+  // Asked only with a session, for the Follow button next to the author.
+  api.on("GET", `/users/${alice.username}/follow-status`, json(200, { following: false }));
 }
 
 describe("PostThread", () => {
@@ -81,6 +86,7 @@ describe("PostThread", () => {
   it("explains a failure to load the post, and loads it again on request", async () => {
     api.on("GET", `/posts/${postId(1)}`, json(503, { detail: "Unavailable." }), json(200, main));
     api.on("GET", `/posts/${postId(1)}/replies`, json(200, page([])));
+    api.on("GET", `/users/${alice.username}/follow-status`, json(200, { following: false }));
     await renderSignedIn(<PostThread postId={postId(1)} />);
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Couldn't load this post");
@@ -93,6 +99,7 @@ describe("PostThread", () => {
   it("explains a failure to load the replies, and keeps the post", async () => {
     api.on("GET", `/posts/${postId(1)}`, json(200, main));
     api.on("GET", `/posts/${postId(1)}/replies`, json(503, { detail: "Unavailable." }));
+    api.on("GET", `/users/${alice.username}/follow-status`, json(200, { following: false }));
     await renderSignedIn(<PostThread postId={postId(1)} />);
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Couldn't load replies");
@@ -137,5 +144,81 @@ describe("PostThread", () => {
     await renderSignedOut(<PostThread postId={postId(1)} />);
 
     expect(await screen.findByRole("link", { name: "Log in" })).toHaveAttribute("href", "/login");
+  });
+});
+
+describe("PostThread: the post's own page", () => {
+  it("shows the author's name above the title, the full time and the counts, without a reply total", async () => {
+    thread(main, page([]));
+    await renderSignedIn(<PostThread postId={postId(1)} />);
+
+    const article = await screen.findByRole("article", { name: "Post by Alice Example" });
+    expect(screen.getByRole("heading", { level: 1, name: "Post" })).toBeInTheDocument();
+    expect(screen.getAllByText("Alice Example").length).toBeGreaterThan(1);
+    const stats = within(article).getByText("likes").closest("p")!;
+    expect(stats).toHaveTextContent(/2 likes.*1 repost/);
+    expect(stats).not.toHaveTextContent(/repl/i);
+    expect(within(article).getByRole("button", { name: "Like" })).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("goes back to Home when the page was opened directly", async () => {
+    thread(main, page([]));
+    await renderSignedIn(<PostThread postId={postId(1)} />);
+
+    await userEvent.setup().click(await screen.findByRole("button", { name: "Back" }));
+
+    expect(router.push).toHaveBeenCalledWith("/");
+    expect(router.back).not.toHaveBeenCalled();
+  });
+
+  it("follows the author from the backend's answer, and unfollows", async () => {
+    thread(main, page([]));
+    api.on("POST", `/users/${alice.username}/follow`, json(200, { following: true }));
+    api.on("DELETE", `/users/${alice.username}/follow`, json(200, { following: false }));
+    await renderSignedIn(<PostThread postId={postId(1)} />);
+    const user = userEvent.setup();
+
+    const follow = await screen.findByRole("button", { name: "Follow" });
+    expect(follow).toHaveAttribute("aria-pressed", "false");
+    await user.click(follow);
+
+    const following = await screen.findByRole("button", { name: "Following" });
+    expect(following).toHaveAttribute("aria-pressed", "true");
+    await user.click(following);
+
+    expect(await screen.findByRole("button", { name: "Follow" })).toBeInTheDocument();
+    expect(api.calls("POST", `/users/${alice.username}/follow`)).toHaveLength(1);
+    expect(api.calls("DELETE", `/users/${alice.username}/follow`)).toHaveLength(1);
+  });
+
+  it("explains a failed follow and keeps the button as it was", async () => {
+    thread(main, page([]));
+    api.on("POST", `/users/${alice.username}/follow`, json(500, { detail: "Internal server error." }));
+    await renderSignedIn(<PostThread postId={postId(1)} />);
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole("button", { name: "Follow" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Something went wrong. Please try again.");
+    expect(screen.getByRole("button", { name: "Follow" })).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("offers no Follow on one's own post, and asks nothing about it", async () => {
+    api.on("GET", `/posts/${postId(1)}`, json(200, post(1, viewerAuthor, { content: "Mine" })));
+    api.on("GET", `/posts/${postId(1)}/replies`, json(200, page([])));
+    await renderSignedIn(<PostThread postId={postId(1)} />);
+
+    expect(await screen.findByText("Mine")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Follow/ })).not.toBeInTheDocument();
+  });
+
+  it("offers no Follow and no Back to a visitor without a session", async () => {
+    thread(main, page([]));
+    await renderSignedOut(<PostThread postId={postId(1)} />);
+
+    expect(await screen.findByText("The post itself")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Follow/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Back" })).not.toBeInTheDocument();
+    expect(api.calls("GET", `/users/${alice.username}/follow-status`)).toEqual([]);
   });
 });

@@ -18,16 +18,19 @@ const colors = [
 
 const sizes = {
   xs: "size-5 text-[0.5rem]",
+  compact: "size-8 text-xs",
   sm: "size-9 text-sm",
   md: "size-10 text-base",
+  post: "size-12 text-lg",
   story: "size-14 text-xl",
   lg: "size-20 text-3xl",
   xl: "size-24 text-4xl",
 };
 
+// A 2px ring, then a 2px gap in the tile's colour.
 const rings = {
-  unseen: "inset-ring-accent",
-  seen: "inset-ring-edge/12",
+  unseen: "bg-(image:--story-ring)",
+  seen: "bg-edge/12",
 };
 
 function colorFor(username: string): string {
@@ -84,11 +87,8 @@ export function Avatar({ user, size = "md", ring }: AvatarProps) {
   if (!ring) return picture;
 
   return (
-    <span
-      data-ring={ring}
-      className={`inline-flex shrink-0 rounded-full p-1.5 inset-ring-2 ${rings[ring]}`}
-    >
-      {picture}
+    <span data-ring={ring} className={`inline-flex shrink-0 rounded-full p-0.5 ${rings[ring]}`}>
+      <span className="inline-flex rounded-full bg-tile p-0.5">{picture}</span>
     </span>
   );
 }

@@ -1,7 +1,6 @@
 "use client";
 
-import { usePathname, useRouter } from "next/navigation";
-import { useComposeRequest } from "@/components/posts/compose-request";
+import { useNewPost } from "@/components/posts/new-post";
 import { buttonVariants } from "@/components/ui/button";
 import { IconPlus } from "@/components/ui/icons";
 
@@ -16,21 +15,15 @@ const placements = {
   "bottom-bar": "size-12",
 };
 
-/** Opens Home's composer, from any page. */
+/** Opens the New post dialog, on any page. */
 export function NewPostButton({ placement }: NewPostButtonProps) {
-  const compose = useComposeRequest();
-  const router = useRouter();
-  const pathname = usePathname();
-
-  function handleClick() {
-    compose?.request();
-    if (pathname !== "/") router.push("/");
-  }
+  const { open } = useNewPost();
 
   return (
     <button
       type="button"
-      onClick={handleClick}
+      aria-haspopup="dialog"
+      onClick={open}
       className={`inline-flex shrink-0 items-center justify-center gap-2 rounded-full text-control font-semibold focus-ring motion-safe:transition ${buttonVariants.primary} ${placements[placement]}`}
     >
       <IconPlus size={placement === "bottom-bar" ? 24 : 20} />
