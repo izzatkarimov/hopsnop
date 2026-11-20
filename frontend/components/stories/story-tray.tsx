@@ -141,11 +141,13 @@ export function StoryTray() {
       {stories.viewing && (
         <StoryViewer
           {...stories.viewing}
+          neighbours={stories.neighbours}
           step={stories.step}
           announcement={stories.announcement}
           onNext={stories.next}
           onPrevious={stories.previous}
           onClose={stories.close}
+          onOpen={stories.open}
           onSeen={stories.recordView}
           onDelete={stories.deleteStory}
           onPictureError={stories.checkStory}

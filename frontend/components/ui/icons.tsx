@@ -346,58 +346,57 @@ export function IconTrash(props: IconProps) {
   );
 }
 
-/* Older icons, still used by screens that haven't moved to the ones above. */
-
-type LegacyIconProps = SVGProps<SVGSVGElement>;
-
-function Svg({ children, ...props }: LegacyIconProps) {
+export function IconPause(props: IconProps) {
   return (
-    <svg
-      viewBox="0 0 24 24"
-      width={24}
-      height={24}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.8}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-      focusable="false"
-      {...props}
-    >
-      {children}
-    </svg>
+    <Icon {...props}>
+      <path d="M5 6C5 4.895 5.895 4 7 4C8.105 4 9 4.895 9 6V18C9 19.105 8.105 20 7 20C5.895 20 5 19.105 5 18V6Z" />
+      <path d="M15 6C15 4.895 15.895 4 17 4C18.105 4 19 4.895 19 6V18C19 19.105 18.105 20 17 20C15.895 20 15 19.105 15 18V6Z" />
+    </Icon>
   );
 }
 
-export function TrashIcon(props: LegacyIconProps) {
+export function IconChevronLeft(props: IconProps) {
   return (
-    <Svg {...props}>
-      <path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" />
-    </Svg>
+    <Icon {...props}>
+      <path d="M15 20L8.414 13.414C7.633 12.633 7.633 11.367 8.414 10.586L15 4" />
+    </Icon>
   );
 }
 
-export function CloseIcon(props: LegacyIconProps) {
+export function IconChevronRight(props: IconProps) {
   return (
-    <Svg {...props}>
-      <path d="M6 6l12 12M18 6 6 18" />
-    </Svg>
+    <Icon {...props}>
+      <path d="M9 4L15.586 10.586C16.367 11.367 16.367 12.633 15.586 13.414L9 20" />
+    </Icon>
   );
 }
 
-export function ChevronLeftIcon(props: LegacyIconProps) {
+export function IconClose(props: IconProps) {
   return (
-    <Svg {...props}>
-      <path d="m15 5-7 7 7 7" />
-    </Svg>
+    <Icon {...props}>
+      <path d="M5 5L19 19M19 5L5 19" />
+    </Icon>
   );
 }
 
-export function ChevronRightIcon(props: LegacyIconProps) {
+export function IconImage(props: IconProps) {
   return (
-    <Svg {...props}>
-      <path d="m9 5 7 7-7 7" />
-    </Svg>
+    <Icon {...props}>
+      <path d="M4 6C4 4.895 4.895 4 6 4H18C19.105 4 20 4.895 20 6V18C20 19.105 19.105 20 18 20H6C4.895 20 4 19.105 4 18V6Z" />
+      <path d="M16 20L9.414 13.414C8.633 12.633 7.367 12.633 6.586 13.414L4 16" />
+      <path d="M14.5 11.5C15.605 11.5 16.5 10.605 16.5 9.5C16.5 8.395 15.605 7.5 14.5 7.5C13.395 7.5 12.5 8.395 12.5 9.5C12.5 10.605 13.395 11.5 14.5 11.5Z" />
+    </Icon>
+  );
+}
+
+export function IconImageAdd(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M14.5 11.5C15.605 11.5 16.5 10.605 16.5 9.5C16.5 8.395 15.605 7.5 14.5 7.5C13.395 7.5 12.5 8.395 12.5 9.5C12.5 10.605 13.395 11.5 14.5 11.5Z" />
+      <path d="M11 20H6C4.895 20 4 19.105 4 18V6C4 4.895 4.895 4 6 4H18C19.105 4 20 4.895 20 6V10" />
+      <path d="M11 15L9.414 13.414C8.633 12.633 7.367 12.633 6.586 13.414L4 16" />
+      <path d="M15 18H21" />
+      <path d="M18 15V21" />
+    </Icon>
   );
 }

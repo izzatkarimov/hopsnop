@@ -5,6 +5,7 @@ import { RequireAuth } from "@/components/auth/require-auth";
 import type { StoryResponse } from "@/lib/stories";
 import { API_URL, api, deferred, json, noContent } from "@/test/api";
 import { alice, bob, story, storyId, storyPage, viewerAuthor } from "@/test/fixtures";
+import type { PostAuthorResponse } from "@/lib/posts";
 import { authState, renderSignedIn } from "@/test/render";
 import { StoryTray } from "./story-tray";
 
@@ -13,6 +14,13 @@ vi.mock("next/navigation", () => ({ useRouter: () => router }));
 
 const LIST = "/stories?limit=50";
 const ALICE = "Stories by Alice Example, new";
+
+const carol: PostAuthorResponse = {
+  id: "ca201000-0000-4000-8000-000000000003",
+  username: "carol_5",
+  display_name: "Carol Example",
+  avatar_url: null,
+};
 
 function render() {
   return renderSignedIn(
@@ -64,6 +72,23 @@ function viewPath(n: number) {
 
 function progressBar() {
   return viewer().querySelector(".animate-story-progress");
+}
+
+function neighbour(side: "previous" | "next") {
+  return screen.getByTestId(`story-${side}-author`);
+}
+
+/** Through the ⋯ menu, which only one's own stories have. */
+async function askToDelete(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(button("Story options"));
+  const menu = within(viewer()).getByRole("menu", { name: "Story options" });
+  await user.click(within(menu).getByRole("menuitem", { name: "Delete story" }));
+  return within(viewer()).getByRole("group", { name: "Delete this story?" });
+}
+
+async function deleteIt(user: ReturnType<typeof userEvent.setup>) {
+  const confirmation = await askToDelete(user);
+  await user.click(within(confirmation).getByRole("button", { name: "Delete" }));
 }
 
 describe("StoryViewer: what it shows", () => {
@@ -142,7 +167,7 @@ describe("StoryViewer: moving between stories", () => {
     expect(opener).toHaveFocus();
   });
 
-  it("moves with the halves of the picture and with the Previous and Next buttons", async () => {
+  it("moves with the outer thirds of the picture and with the Previous and Next buttons", async () => {
     const { user } = await setup([story(1, alice), story(2, alice), story(3, alice)]);
     await user.click(screen.getByRole("button", { name: ALICE }));
     expect(shownStory()).toBe(3);
@@ -221,6 +246,55 @@ describe("StoryViewer: moving on by itself", () => {
     expect(shownStory()).toBe(1);
   });
 
+  it("pauses with the Pause button until it is pressed again, even on the next story", async () => {
+    const { user } = await setup([story(1, alice), story(2, alice), story(3, alice)]);
+    await user.click(screen.getByRole("button", { name: ALICE }));
+    stopTime();
+    api.on("POST", viewPath(3), json(200, { viewed: true }));
+    api.on("POST", viewPath(2), json(200, { viewed: true }));
+    fireEvent.load(picture());
+    const pause = button("Pause");
+    expect(pause).toHaveAttribute("aria-pressed", "false");
+
+    fireEvent.click(pause);
+    expect(pause).toHaveAttribute("aria-pressed", "true");
+    expect(progressBar()).toHaveClass("[animation-play-state:paused]");
+    await pass(10_000);
+    expect(shownStory()).toBe(3);
+
+    fireEvent.click(button("Next"));
+    fireEvent.load(picture());
+    await pass(10_000);
+    expect(shownStory()).toBe(2);
+    expect(button("Pause")).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.click(button("Pause"));
+    expect(button("Pause")).toHaveAttribute("aria-pressed", "false");
+    await pass(5_000);
+    expect(shownStory()).toBe(1);
+  });
+
+  it("pauses and goes on with Space, but leaves Space to a focused button", async () => {
+    const { user } = await setup([story(1, alice), story(2, alice)]);
+    await user.click(screen.getByRole("button", { name: ALICE }));
+    stopTime();
+    api.on("POST", viewPath(2), json(200, { viewed: true }));
+    fireEvent.load(picture());
+
+    fireEvent.keyDown(viewer(), { key: " " });
+    expect(button("Pause")).toHaveAttribute("aria-pressed", "true");
+    await pass(10_000);
+    expect(shownStory()).toBe(2);
+
+    fireEvent.keyDown(button("Next"), { key: " " });
+    expect(button("Pause")).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.keyDown(viewer(), { key: " " });
+    expect(button("Pause")).toHaveAttribute("aria-pressed", "false");
+    await pass(5_000);
+    expect(shownStory()).toBe(1);
+  });
+
   it("goes on from where it was paused", async () => {
     const { user } = await setup([story(1, alice), story(2, alice)]);
     await user.click(screen.getByRole("button", { name: ALICE }));
@@ -245,7 +319,7 @@ describe("StoryViewer: moving on by itself", () => {
     const { user } = await setup([story(1, alice), story(2, alice), story(3, alice)]);
     await user.click(screen.getByRole("button", { name: ALICE }));
     await user.tab();
-    expect(within(viewer()).getByRole("link", { name: "Alice Example" })).toHaveFocus();
+    expect(button("Previous")).toHaveFocus();
     stopTime();
     api.on("POST", viewPath(3), json(200, { viewed: true }));
     api.on("POST", viewPath(2), json(200, { viewed: true }));
@@ -282,10 +356,12 @@ describe("StoryViewer: moving on by itself", () => {
     api.on("POST", viewPath(1), json(200, { viewed: true }));
 
     fireEvent.load(picture());
+    fireEvent.keyDown(viewer(), { key: " " });
     await pass(20_000);
 
     expect(shownStory()).toBe(2);
     expect(progressBar()).toBeNull();
+    expect(within(viewer()).queryByRole("button", { name: "Pause" })).not.toBeInTheDocument();
     fireEvent.click(button("Next"));
     expect(shownStory()).toBe(1);
     fireEvent.click(button("Previous"));
@@ -356,12 +432,12 @@ describe("StoryViewer: one's own stories", () => {
 
     expect(viewer()).toHaveAccessibleName("Your story");
     expect(within(viewer()).getByText("Seen by 3")).toBeInTheDocument();
-    expect(button("Delete")).toBeInTheDocument();
+    expect(button("Story options")).toBeInTheDocument();
 
     await user.keyboard("{ArrowRight}");
     expect(viewer()).toHaveAccessibleName("Stories by Alice Example");
     expect(within(viewer()).queryByText(/Seen by/)).not.toBeInTheDocument();
-    expect(within(viewer()).queryByRole("button", { name: "Delete" })).not.toBeInTheDocument();
+    expect(within(viewer()).queryByRole("button", { name: "Story options" })).not.toBeInTheDocument();
   });
 
   it("deletes one's own story after a confirmation, and moves on to the next", async () => {
@@ -370,18 +446,26 @@ describe("StoryViewer: one's own stories", () => {
     await user.click(screen.getByRole("button", { name: "Your story" }));
     expect(shownStory()).toBe(2);
 
-    await user.click(button("Delete"));
-    const confirmation = within(viewer()).getByRole("group", { name: "Delete story" });
+    await user.click(button("Story options"));
+    const menu = within(viewer()).getByRole("menu", { name: "Story options" });
+    expect(within(menu).getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["Delete story"]);
+    await user.keyboard("{Escape}");
+    expect(within(viewer()).queryByRole("menu")).not.toBeInTheDocument();
+    expect(button("Story options")).toHaveFocus();
+
+    let confirmation = await askToDelete(user);
+    expect(within(confirmation).getByRole("button", { name: "Cancel" })).toHaveFocus();
+    await user.keyboard("{Escape}");
+    expect(within(viewer()).queryByRole("group")).not.toBeInTheDocument();
+    expect(button("Story options")).toHaveFocus();
+
+    confirmation = await askToDelete(user);
     await user.click(within(confirmation).getByRole("button", { name: "Cancel" }));
-    expect(within(viewer()).queryByRole("group", { name: "Delete story" })).not.toBeInTheDocument();
+    expect(within(viewer()).queryByRole("group")).not.toBeInTheDocument();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
     expect(api.calls("DELETE")).toEqual([]);
 
-    await user.click(button("Delete"));
-    await user.click(
-      within(within(viewer()).getByRole("group", { name: "Delete story" })).getByRole("button", {
-        name: "Delete",
-      }),
-    );
+    await deleteIt(user);
 
     await waitFor(() => expect(shownStory()).toBe(1));
     expect(api.calls("DELETE", `/stories/${storyId(2)}`)).toHaveLength(1);
@@ -394,10 +478,7 @@ describe("StoryViewer: one's own stories", () => {
     const { user } = await setup([story(1, viewerAuthor)]);
     await user.click(screen.getByRole("button", { name: "Your story" }));
 
-    await user.click(button("Delete"));
-    await user.click(
-      within(screen.getByRole("group", { name: "Delete story" })).getByRole("button", { name: "Delete" }),
-    );
+    await deleteIt(user);
 
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(screen.queryByRole("button", { name: "Your story" })).not.toBeInTheDocument();
@@ -413,10 +494,7 @@ describe("StoryViewer: one's own stories", () => {
     const { user } = await setup([story(1, viewerAuthor)]);
     await user.click(screen.getByRole("button", { name: "Your story" }));
 
-    await user.click(button("Delete"));
-    await user.click(
-      within(screen.getByRole("group", { name: "Delete story" })).getByRole("button", { name: "Delete" }),
-    );
+    await deleteIt(user);
 
     expect(await within(viewer()).findByRole("alert")).toHaveTextContent(message);
     expect(shownStory()).toBe(1);
@@ -427,10 +505,7 @@ describe("StoryViewer: one's own stories", () => {
     const { user } = await setup([story(1, viewerAuthor)]);
     await user.click(screen.getByRole("button", { name: "Your story" }));
 
-    await user.click(button("Delete"));
-    await user.click(
-      within(screen.getByRole("group", { name: "Delete story" })).getByRole("button", { name: "Delete" }),
-    );
+    await deleteIt(user);
 
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
@@ -442,10 +517,7 @@ describe("StoryViewer: one's own stories", () => {
     const { user } = await setup([story(1, viewerAuthor)]);
     await user.click(screen.getByRole("button", { name: "Your story" }));
 
-    await user.click(button("Delete"));
-    await user.click(
-      within(screen.getByRole("group", { name: "Delete story" })).getByRole("button", { name: "Delete" }),
-    );
+    await deleteIt(user);
 
     await waitFor(() => expect(authState()).toBe("unauthenticated"));
   });
@@ -490,5 +562,81 @@ describe("StoryViewer: stories that are gone", () => {
 
     expect(shownStory()).toBe(1);
     expect(within(viewer()).getByText("Story 1 of 1")).toBeInTheDocument();
+  });
+});
+
+describe("StoryViewer: the authors either side", () => {
+  it("shows them beside the story, each at the story it would open on", async () => {
+    const { user } = await setup([
+      story(1, bob),
+      story(2, alice),
+      story(3, carol),
+      story(4, carol, { viewed_by_me: true }),
+    ]);
+
+    await user.click(screen.getByRole("button", { name: ALICE }));
+
+    expect(neighbour("previous")).toHaveTextContent("Bob Example");
+    expect(neighbour("next")).toHaveTextContent("Carol Example");
+    expect(neighbour("previous").querySelector("img")).toHaveAttribute(
+      "src",
+      `${API_URL}/stories/${storyId(1)}/media`,
+    );
+    expect(neighbour("next").querySelector("img")).toHaveAttribute(
+      "src",
+      `${API_URL}/stories/${storyId(3)}/media`,
+    );
+    expect(neighbour("next").querySelector("[data-ring]")).toHaveAttribute("data-ring", "unseen");
+  });
+
+  it("hides them from screen readers and never gives them focus", async () => {
+    const { user } = await setup([story(1, bob), story(2, alice), story(3, carol)]);
+    await user.click(screen.getByRole("button", { name: ALICE }));
+    const sides = [neighbour("previous"), neighbour("next")];
+
+    for (const side of sides) {
+      expect(side).toHaveAttribute("aria-hidden", "true");
+      expect(side).not.toHaveAttribute("tabindex");
+      expect(side.querySelector("a, button, input, [tabindex]")).toBeNull();
+    }
+    expect(within(viewer()).queryByRole("img", { name: /Bob|Carol/ })).not.toBeInTheDocument();
+
+    const reached: (string | null)[] = [];
+    for (let presses = 0; presses < 6; presses++) {
+      await user.tab();
+      expect(sides.some((side) => side.contains(document.activeElement))).toBe(false);
+      reached.push(document.activeElement!.getAttribute("aria-label") ?? document.activeElement!.getAttribute("href"));
+    }
+    expect(reached).toEqual(["Previous", "/users/alice_92", "Pause", "Next", "Close", "Previous"]);
+  });
+
+  it("records no view when their pictures load", async () => {
+    const { user } = await setup([story(1, bob), story(2, alice), story(3, carol)]);
+    await user.click(screen.getByRole("button", { name: ALICE }));
+
+    fireEvent.load(neighbour("previous").querySelector("img")!);
+    fireEvent.load(neighbour("next").querySelector("img")!);
+    await settle();
+
+    expect(api.calls("POST")).toEqual([]);
+  });
+
+  it("opens an author on a click, at their first story not viewed yet", async () => {
+    const { user } = await setup([
+      story(1, bob),
+      story(2, alice),
+      story(3, alice, { viewed_by_me: true }),
+      story(4, carol),
+    ]);
+    await user.click(screen.getByRole("button", { name: "Stories by Bob Example, new" }));
+    expect(screen.queryByTestId("story-previous-author")).not.toBeInTheDocument();
+
+    await user.click(neighbour("next"));
+    expect(viewer()).toHaveAccessibleName("Stories by Alice Example");
+    expect(shownStory()).toBe(2);
+
+    await user.click(neighbour("previous"));
+    expect(viewer()).toHaveAccessibleName("Stories by Bob Example");
+    expect(shownStory()).toBe(1);
   });
 });

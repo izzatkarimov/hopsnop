@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
-import type { ComponentType, KeyboardEvent } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { IconButton } from "@/components/ui/icon-button";
 import {
@@ -12,7 +11,7 @@ import {
   IconPerson,
   IconTrash,
 } from "@/components/ui/icons";
-import type { IconProps } from "@/components/ui/icons";
+import { Menu, MenuItem, MenuSeparator } from "@/components/ui/menu";
 import { isApiError } from "@/lib/api";
 import { getFollowStatus, setFollow } from "@/lib/profiles";
 import type { Post } from "@/lib/types";
@@ -27,31 +26,6 @@ type PostMenuProps = {
   onStatus: (message: string) => void;
 };
 
-/* Full class names are listed so Tailwind can detect them. */
-const itemClass =
-  "flex w-full items-center gap-3 rounded-item px-3 py-2 text-left text-body font-medium outline-hidden hover:bg-edge/6 focus-visible:bg-edge/6 focus-visible:inset-ring focus-visible:inset-ring-ink/72";
-
-type MenuItemProps = {
-  icon: ComponentType<IconProps>;
-  label: string;
-  danger?: boolean;
-  onSelect: () => void;
-};
-
-function MenuItem({ icon: Icon, label, danger, onSelect }: MenuItemProps) {
-  return (
-    <button
-      type="button"
-      role="menuitem"
-      onClick={onSelect}
-      className={`${itemClass} ${danger ? "text-danger" : "text-primary"}`}
-    >
-      <Icon className="shrink-0" />
-      {label}
-    </button>
-  );
-}
-
 export function PostMenu({ post, isOwnPost, onEdit, onDelete, onStatus }: PostMenuProps) {
   const auth = useAuth();
   const signedIn = auth.status === "authenticated";
@@ -61,34 +35,12 @@ export function PostMenu({ post, isOwnPost, onEdit, onDelete, onStatus }: PostMe
   const [following, setFollowing] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
   const menuId = useId();
 
-  function getItems(): HTMLButtonElement[] {
-    return Array.from(
-      menuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]') ?? [],
-    );
-  }
-
-  function close({ restoreFocus }: { restoreFocus: boolean }) {
+  function close(restoreFocus: boolean) {
     setOpen(false);
     if (restoreFocus) triggerRef.current?.focus();
   }
-
-  useEffect(() => {
-    if (!open) return;
-
-    menuRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus();
-
-    function handlePointerDown(event: PointerEvent) {
-      if (!containerRef.current?.contains(event.target as Node)) {
-        setOpen(false);
-      }
-    }
-
-    document.addEventListener("pointerdown", handlePointerDown);
-    return () => document.removeEventListener("pointerdown", handlePointerDown);
-  }, [open]);
 
   useEffect(() => {
     if (!open || !signedIn || isOwnPost) return;
@@ -106,39 +58,8 @@ export function PostMenu({ post, isOwnPost, onEdit, onDelete, onStatus }: PostMe
     };
   }, [open, signedIn, isOwnPost, username]);
 
-  function handleMenuKeyDown(event: KeyboardEvent<HTMLDivElement>) {
-    const items = getItems();
-    const index = items.indexOf(document.activeElement as HTMLButtonElement);
-
-    switch (event.key) {
-      case "Escape":
-        event.preventDefault();
-        close({ restoreFocus: true });
-        break;
-      case "Tab":
-        setOpen(false);
-        break;
-      case "ArrowDown":
-        event.preventDefault();
-        items[(index + 1) % items.length]?.focus();
-        break;
-      case "ArrowUp":
-        event.preventDefault();
-        items[(index - 1 + items.length) % items.length]?.focus();
-        break;
-      case "Home":
-        event.preventDefault();
-        items[0]?.focus();
-        break;
-      case "End":
-        event.preventDefault();
-        items[items.length - 1]?.focus();
-        break;
-    }
-  }
-
   async function copy(text: string, done: string, what: string) {
-    close({ restoreFocus: true });
+    close(true);
     onStatus(
       (await copyToClipboard(text))
         ? done
@@ -147,7 +68,7 @@ export function PostMenu({ post, isOwnPost, onEdit, onDelete, onStatus }: PostMe
   }
 
   async function unfollow() {
-    close({ restoreFocus: true });
+    close(true);
     try {
       setFollowing(await setFollow(username, false));
       onStatus(`You unfollowed @${username}.`);
@@ -193,13 +114,12 @@ export function PostMenu({ post, isOwnPost, onEdit, onDelete, onStatus }: PostMe
       />
 
       {open && (
-        <div
-          ref={menuRef}
+        <Menu
           id={menuId}
-          role="menu"
-          aria-label="Post options"
-          onKeyDown={handleMenuKeyDown}
-          className="absolute top-full right-0 z-30 mt-1 flex w-64 flex-col rounded-popover p-2 surface-popover"
+          label="Post options"
+          onClose={close}
+          containerRef={containerRef}
+          className="absolute top-full right-0 mt-1"
         >
           <MenuItem
             icon={IconLink}
@@ -214,9 +134,7 @@ export function PostMenu({ post, isOwnPost, onEdit, onDelete, onStatus }: PostMe
           {showUnfollow && (
             <MenuItem icon={IconPerson} label={`Unfollow @${username}`} onSelect={unfollow} />
           )}
-          {(onEdit || onDelete) && (
-            <div role="separator" className="mx-2 my-1 h-px bg-edge/6" />
-          )}
+          {(onEdit || onDelete) && <MenuSeparator />}
           {onEdit && (
             <MenuItem icon={IconPencil} label="Edit post" onSelect={() => select(onEdit)} />
           )}
@@ -228,7 +146,7 @@ export function PostMenu({ post, isOwnPost, onEdit, onDelete, onStatus }: PostMe
               onSelect={() => select(onDelete)}
             />
           )}
-        </div>
+        </Menu>
       )}
     </div>
   );

@@ -59,11 +59,11 @@ function merge(first: Story[], then: Story[]): Story[] {
   return [...first, ...then.filter((story) => !known.has(story.id))];
 }
 
-function startOf(group: StoryGroup): string {
+function startOf(group: StoryGroup): Story {
   const unviewed = group.isOwn
     ? undefined
     : group.stories.find((story) => !story.viewedByViewer);
-  return (unviewed ?? group.stories[0]).id;
+  return unviewed ?? group.stories[0];
 }
 
 function locate(groups: StoryGroup[], id: string) {
@@ -92,7 +92,7 @@ function following(
     const left = remaining.find(
       (other) => other.author.username === group.author.username,
     );
-    if (left) return startOf(left);
+    if (left) return startOf(left).id;
   }
   return null;
 }
@@ -170,7 +170,7 @@ function reducer(state: State, action: Action): State {
         (candidate) => candidate.author.username === action.username,
       );
       if (!group) return state;
-      return { ...state, current: startOf(group), step: state.step + 1, announcement: "" };
+      return { ...state, current: startOf(group).id, step: state.step + 1, announcement: "" };
     }
     case "next": {
       if (state.current === null) return state;
@@ -188,6 +188,13 @@ function reducer(state: State, action: Action): State {
 }
 
 export type Viewing = { group: StoryGroup; story: Story };
+
+/** The authors either side of the one being viewed, at the story each would open on. */
+export type Neighbours = { previous: Viewing | null; next: Viewing | null };
+
+function opening(group: StoryGroup | undefined): Viewing | null {
+  return group ? { group, story: startOf(group) } : null;
+}
 
 export function useStories(viewerUsername: string) {
   const { expireSession } = useAuth();
@@ -285,15 +292,20 @@ export function useStories(viewerUsername: string) {
 
   const groups = groupStories(state.stories, viewerUsername);
   let viewing: Viewing | null = null;
-  for (const group of groups) {
+  let neighbours: Neighbours = { previous: null, next: null };
+  for (let index = 0; index < groups.length; index++) {
+    const group = groups[index];
     const story = group.stories.find((candidate) => candidate.id === state.current);
-    if (story) viewing = { group, story };
+    if (!story) continue;
+    viewing = { group, story };
+    neighbours = { previous: opening(groups[index - 1]), next: opening(groups[index + 1]) };
   }
 
   return {
     status: state.status,
     groups,
     viewing,
+    neighbours,
     step: state.step,
     announcement: state.announcement,
     retry: () => dispatch({ type: "load" }),

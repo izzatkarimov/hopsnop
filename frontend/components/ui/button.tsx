@@ -28,10 +28,11 @@ type ButtonStyle = {
   icon?: ReactNode;
 };
 
-function buttonClass(
+/** For something that only looks like a button, e.g. a file input's label. */
+export function buttonClass(
   variant: ButtonVariant,
   size: ButtonSize,
-  className: string | undefined,
+  className?: string,
 ): string {
   return [baseClass, buttonVariants[variant], buttonSizes[size], className]
     .filter(Boolean)

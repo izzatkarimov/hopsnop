@@ -5,7 +5,7 @@ import { Wordmark } from "@/components/ui/wordmark";
 export function GuestShell({ children }: { children: ReactNode }) {
   return (
     <div className="flex min-h-dvh flex-col">
-      <header className="sticky top-0 z-20 flex h-16 items-center justify-between gap-3 border-b border-edge/6 bg-bg/80 px-4 backdrop-blur-lg sm:px-6">
+      <header className="sticky top-0 z-20 flex h-16 items-center justify-between gap-3 border-b border-edge/6 bg-bg/80 px-4 backdrop-blur-sm sm:px-6">
         <Wordmark />
         <nav aria-label="Account" className="flex items-center gap-2">
           <ButtonLink href="/login">Log in</ButtonLink>

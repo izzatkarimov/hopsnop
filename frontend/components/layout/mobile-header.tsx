@@ -13,7 +13,7 @@ export function MobileHeader() {
   const Glyph = active ? IconSettingsFilled : IconSettings;
 
   return (
-    <header className="sticky top-0 z-20 flex h-14 items-center justify-between border-b border-edge/6 bg-bg/80 px-4 backdrop-blur-lg sm:hidden">
+    <header className="sticky top-0 z-20 flex h-14 items-center justify-between border-b border-edge/6 bg-bg/80 px-4 backdrop-blur-sm sm:hidden">
       <Wordmark />
       <Link
         href="/settings"

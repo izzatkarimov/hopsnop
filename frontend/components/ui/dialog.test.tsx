@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import type { KeyboardEvent } from "react";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
@@ -97,5 +98,61 @@ describe("Dialog", () => {
     await user.tab({ shift: true });
     expect(post).toHaveFocus();
     expect(screen.getByRole("button", { name: "Elsewhere" })).not.toHaveFocus();
+  });
+
+  it("puts a header control in place of Cancel when given one", async () => {
+    render(
+      <Dialog title="New story" onClose={() => {}} headerStart={<Button>Back</Button>}>
+        Body
+      </Dialog>,
+    );
+
+    expect(screen.getByRole("button", { name: "Back" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Cancel" })).not.toBeInTheDocument();
+  });
+});
+
+describe("Dialog: full screen", () => {
+  function Viewer({ onKey }: { onKey?: (event: KeyboardEvent<HTMLDialogElement>) => void }) {
+    const [open, setOpen] = useState(true);
+    return open ? (
+      <Dialog variant="fullscreen" title="Stories by Alice" onClose={() => setOpen(false)} onKeyDown={onKey}>
+        <button type="button">Next</button>
+      </Dialog>
+    ) : (
+      <p>Closed</p>
+    );
+  }
+
+  it("is named by its title without showing it, and shows only what it is given", () => {
+    render(<Viewer />);
+
+    const dialog = screen.getByRole("dialog", { name: "Stories by Alice" });
+    expect(dialog).toHaveAttribute("aria-modal", "true");
+    expect(dialog).toHaveFocus();
+    expect(screen.queryByRole("heading")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Cancel" })).not.toBeInTheDocument();
+  });
+
+  it("hears keys first, and closes on Escape unless the key was taken", async () => {
+    const user = userEvent.setup();
+    const keys: string[] = [];
+    let takeEscape = true;
+    render(
+      <Viewer
+        onKey={(event) => {
+          keys.push(event.key);
+          if (event.key === "Escape" && takeEscape) event.preventDefault();
+        }}
+      />,
+    );
+
+    await user.keyboard("{ArrowRight}{Escape}");
+    expect(keys).toEqual(["ArrowRight", "Escape"]);
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+
+    takeEscape = false;
+    await user.keyboard("{Escape}");
+    expect(screen.getByText("Closed")).toBeInTheDocument();
   });
 });

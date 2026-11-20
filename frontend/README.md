@@ -65,7 +65,7 @@ Tailwind's theme, so a light theme would only have to redefine those variables.
 | Colours | `ink` (links, focus, blue text), `accent` (primary buttons only, never text), `like`, `success`, `warning`, `mention`, `danger`, `danger-solid` (destructive buttons), `edge` (borders and hairlines, used at 4 to 12%), `highlight` |
 | Type | `text-meta` 12/16, `text-body` 16/24, `text-control` 16/20, `text-lead` 20/28, `text-title` 24/32, `text-display` 28/36, in Bricolage Grotesque; `font-mono` (JetBrains Mono) only for recovery codes and the two-factor key. Both are loaded with `next/font` |
 | Radii | `rounded-chip` 8, `rounded-item` 12, `rounded-field` 16, `rounded-popover` 20, `rounded-tile` 24, `rounded-shell` 32; buttons and pills `rounded-full` |
-| Shadows | `shadow-shell`, `shadow-raised`, `shadow-primary`, `shadow-danger`, `shadow-popover`, `inset-shadow-well` |
+| Shadows | `shadow-shell`, `shadow-raised`, `shadow-primary`, `shadow-danger`, `shadow-popover`, `shadow-story` (the story viewer's card), `shadow-story-preview`, `inset-shadow-well` |
 | Story ring | `--story-ring`, the gradient around an author with an unseen story; its colours are used nowhere else |
 | Widths | Tailwind's breakpoints, plus `wide` (1100px); `max-w-main` (640px) for the page column |
 
@@ -77,6 +77,9 @@ Tailwind's theme, so a light theme would only have to redefine those variables.
 - The dotted page background (`dot-grid`), the glow behind the sign-in card
   (`glow`) and the light along the stories tile (`glow-top`) are CSS
   gradients: no image is loaded.
+- What is behind a dialog is blurred by 6px under a 64% scrim, and behind the
+  story viewer by 16px under an 86% one (`viewer-backdrop`); glass surfaces
+  blur by 8px.
 - Transitions run only with `motion-safe:`, so they stop for anyone who asks
   for reduced motion.
 - The older colour names (`background`, `foreground`, `border`, `hover`,
@@ -88,13 +91,14 @@ Tailwind's theme, so a light theme would only have to redefine those variables.
 | Component | What it does |
 | --- | --- |
 | `Button`, `ButtonLink` | Primary, secondary, ghost or danger; 36 or 48px tall; an optional leading icon. A button is `type="button"` unless told otherwise |
-| `IconButton` | A button with only an icon; its `label` is required and is its accessible name |
+| `IconButton` | A button with only an icon; its `label` is required and is its accessible name. `overlay` is for controls on a picture |
 | `Field`, `TextAreaField` | Label, hint, error, prefix and a trailing slot. An error replaces the hint, sets `aria-invalid` and is linked with `aria-describedby`. `appearance="code"` is for one-time codes |
 | `Checkbox` | A native checkbox with a label, a hint and an error |
 | `Card` | A `shell` holding `tile`s |
 | `SegmentedControl` | Tabs, with the WAI-ARIA keyboard behaviour |
 | `Avatar` | A picture from the API or the initials; optionally a story ring |
-| `Dialog` | A modal `<dialog>`, named by its title. Tab stays inside it, Escape or Cancel closes it, the page behind it doesn't scroll, and focus goes back to what opened it |
+| `Dialog` | A modal `<dialog>`, named by its title. Tab stays inside it, Escape or Cancel closes it, the page behind it doesn't scroll, and focus goes back to what opened it. `headerStart` takes Cancel's place, e.g. for a back button; `variant="fullscreen"` shows only its content, over the darker backdrop, for the story viewer |
+| `Menu`, `MenuItem` | A menu under a button, with the WAI-ARIA keyboard behaviour: arrows, Home and End move, Escape goes back to the button, Tab or a click elsewhere closes it |
 | `Notice` | An error (`role="alert"`) or information (`role="status"`), with an optional title |
 | `IconBadge`, `TextLink`, `Wordmark` | The round icon above a sign-in card's heading, a link in running text, the logo |
 | `icons.tsx` | Outline icons on a 24-unit grid, drawn 2px wide from 20px and 1.5px below, with filled versions for the current page and other "on" states. Only icons in use are included |
@@ -194,13 +198,25 @@ button's name says the same. One's own entry has no ring, only the + badge for
 adding a story. The row loads on its own, and if it fails it
 offers to try again without touching the feed.
 
-The viewer is a modal `<dialog>`. It plays an author's stories oldest first,
-from the first one not viewed yet (one's own always from the oldest), and
-moves on 5 seconds after a picture has loaded: to the author's next story,
-then to the next author, and it closes after the last. It pauses while the
-picture is pressed, while a control has focus from the keyboard, and while a
-deletion is being confirmed, and with reduced motion it does not move on by
-itself at all.
+The viewer is a full-screen `Dialog`. On phones the story fills the screen;
+from 640px it is a 9:16 card, at most 432×768 and smaller on short screens,
+with round Previous and Next buttons beside it; from 1100px the authors before
+and after it are shown at half size, dimmed, at the story each would open on. A
+picture is always shown whole, on black. The viewer plays an author's stories
+oldest first, from the first one not viewed yet (one's own always from the
+oldest), and moves on 5 seconds after a picture has loaded: to the author's
+next story, then to the next author, and it closes after the last.
+
+- **Controls.** ← and → or the outer thirds of the picture move back and
+  forward, Space or Pause (a toggle, `aria-pressed`) holds the story until
+  pressed again, and Escape closes. It also pauses while the picture is
+  pressed, while a control has focus from the keyboard, while the menu is open
+  and while a deletion is being confirmed. With reduced motion it never moves
+  on by itself, so Pause is left out.
+- **The authors either side** are for pointers only: a click opens them, but
+  they are hidden from screen readers and never take focus, since Previous and
+  Next reach them too. Loading their pictures records no view.
+- **One's own stories** have a ⋯ menu with Delete story, which asks first.
 
 - **Views.** A view is posted once, when the picture of someone else's story
   that is not viewed yet has loaded, and never for one's own. The ring changes
@@ -215,6 +231,14 @@ itself at all.
   reserved before they arrive. A picture chosen for a new story is shown from a
   `blob:` address, which is revoked once it is replaced, published or the
   dialog is closed.
+- **Adding a story** takes two steps in one dialog. The first takes a photo,
+  chosen or dropped on it, and checks its type (JPEG, PNG or WebP) and size
+  (10 MB) before anything is sent; Next waits for one. The second shows it as
+  it will look, with a caption of up to 150 characters, counted as the backend
+  counts them, and Replace photo. Both steps say that stories disappear after
+  24 hours and that location and camera details are removed, which the backend
+  does for every story. Escape or Cancel closes it without asking, except while
+  it is being shared.
 
 ## Security headers
 

@@ -1,6 +1,6 @@
 import type { ComponentProps, ReactNode } from "react";
 
-export type IconButtonVariant = "ghost" | "secondary" | "glass" | "primary";
+export type IconButtonVariant = "ghost" | "secondary" | "glass" | "primary" | "overlay";
 export type IconButtonSize = "sm" | "md" | "lg";
 
 /* Full class names are listed so Tailwind can detect them. */
@@ -10,6 +10,8 @@ const variants: Record<IconButtonVariant, string> = {
   secondary: "surface-raised text-primary not-disabled:hover:brightness-125",
   glass: "surface-glass text-primary not-disabled:hover:bg-edge/10",
   primary: "surface-primary text-white not-disabled:hover:brightness-110",
+  // On a picture, where only white reads.
+  overlay: "text-white not-disabled:hover:bg-white/16 aria-expanded:bg-white/16 aria-pressed:bg-white/24",
 };
 
 const sizes: Record<IconButtonSize, string> = {

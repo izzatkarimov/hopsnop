@@ -13,6 +13,8 @@
   --raised-bottom: #2a2727;
   --glass: rgb(42 39 39 / 0.72);
   --scrim: rgb(10 9 9 / 0.64);
+  /* Behind the story viewer: darker, so the picture stands out. */
+  --scrim-viewer: rgb(10 9 9 / 0.86);
   /* Borders and hairlines, used at 4 to 12%. */
   --edge: #ffffff;
   /* Top-edge highlights and button gloss. */
@@ -103,6 +105,8 @@
   --shadow-primary: 0 4px 12px rgb(34 51 196 / 0.4);
   --shadow-danger: 0 4px 12px rgb(201 58 63 / 0.32);
   --shadow-popover: 0 4px 6px rgb(0 0 0 / 0.24), 0 24px 24px rgb(0 0 0 / 0.48);
+  --shadow-story: 0 8px 8px rgb(0 0 0 / 0.24), 0 32px 32px rgb(0 0 0 / 0.48);
+  --shadow-story-preview: 0 16px 16px rgb(0 0 0 / 0.32);
   --inset-shadow-well: inset 0 4px 8px rgb(0 0 0 / 0.48);
 
   --breakpoint-wide: 68.75rem;
@@ -140,7 +144,7 @@
 }
 
 @utility surface-glass {
-  @apply bg-glass backdrop-blur-lg inset-ring inset-ring-edge/10;
+  @apply bg-glass backdrop-blur-sm inset-ring inset-ring-edge/10;
 }
 
 @utility surface-primary {
@@ -169,6 +173,14 @@
 /* Menus and other panels floating over the page. */
 @utility surface-popover {
   @apply bg-linear-to-b from-popover-top to-tile shadow-popover inset-ring inset-ring-edge/8 inset-shadow-[0_1px_0] inset-shadow-highlight/8;
+}
+
+/* The story viewer's backdrop, replacing the one every dialog has. */
+@utility viewer-backdrop {
+  &::backdrop {
+    background-color: var(--scrim-viewer);
+    backdrop-filter: blur(16px);
+  }
 }
 
 /* A faint accent light along a tile's top edge. */
@@ -210,7 +222,7 @@
 
   dialog::backdrop {
     background-color: var(--scrim, rgb(10 9 9 / 0.64));
-    backdrop-filter: blur(12px);
+    backdrop-filter: blur(6px);
   }
 
   /* Keeps autofilled fields dark instead of the browser's own colours. */
